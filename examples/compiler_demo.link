@@ -62,27 +62,21 @@ fn main() {
     println("=== Link Compiler Demo ===");
 
     println("1. Recursive functions:");
-    println("fib(10) = ");
-    println(fib(10));
-    println("factorial(5) = ");
-    println(factorial(5));
+    println("fib(10) = {}", fib(10));
+    println("factorial(5) = {}", factorial(5));
 
     println("2. Structs:");
     let p1 = Point { x: 0.0, y: 0.0 };
     let p2 = Point { x: 3.0, y: 4.0 };
-    println("distance squared = ");
-    println(distance_sq(p1, p2));
+    println("distance squared = {}", distance_sq(p1, p2));
 
     println("3. Enums and pattern matching:");
     let c = Shape::Circle(5.0);
     let r = Shape::Rectangle(3.0, 4.0);
     let s = Shape::Square(2.5);
-    println("circle area = ");
-    println(area(c));
-    println("rectangle area = ");
-    println(area(r));
-    println("square area = ");
-    println(area(s));
+    println("circle area = {}", area(c));
+    println("rectangle area = {}", area(r));
+    println("square area = {}", area(s));
 
     println("4. Lists and loops:");
     let nums = [1, 2, 3, 4, 5];
@@ -92,12 +86,11 @@ fn main() {
         total = total + nums[i];
         i = i + 1;
     }
-    println("sum of [1,2,3,4,5] = ");
-    println(total);
+    println("sum of [1,2,3,4,5] = {}", total);
 
     println("5. For loops:");
     for i in 1..6 {
-        println(i);
+        println("  {}", i);
     }
 
     println("=== Demo Complete ===");

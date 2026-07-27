@@ -617,7 +617,7 @@ impl TypeChecker {
                     SemaType::Named(name.clone())
                 }
             }
-            Expr::Path { base, segment } => {
+            Expr::Path { base, segment: _ } => {
                 if self.enum_variants.contains_key(base) {
                     SemaType::Named(base.clone())
                 } else if self.struct_fields.contains_key(base) {
@@ -626,7 +626,7 @@ impl TypeChecker {
                     SemaType::Unknown
                 }
             }
-            Expr::PathCall { base, segment, args } => {
+            Expr::PathCall { base, segment: _, args } => {
                 for arg in args {
                     self.infer_expr(arg);
                 }

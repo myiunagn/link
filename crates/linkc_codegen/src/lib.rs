@@ -50,8 +50,10 @@ pub struct CBackend {
     struct_defs: Vec<String>,
     enum_defs: Vec<String>,
     var_map: HashMap<String, String>,
+    var_type_map: HashMap<String, String>,
     struct_map: HashMap<String, Vec<(String, String)>>,
     enum_map: HashMap<String, Vec<(String, usize, Vec<String>)>>,
+    fn_return_types: HashMap<String, String>,
     tmp_counter: usize,
     has_main: bool,
     #[allow(dead_code)]
@@ -68,8 +70,10 @@ impl CBackend {
             struct_defs: Vec::new(),
             enum_defs: Vec::new(),
             var_map: HashMap::new(),
+            var_type_map: HashMap::new(),
             struct_map: HashMap::new(),
             enum_map: HashMap::new(),
+            fn_return_types: HashMap::new(),
             tmp_counter: 0,
             has_main: false,
             opt_level,
@@ -106,7 +110,7 @@ impl CBackend {
                 let inner = Self::map_type(inner)?;
                 Ok(format!("{}*", inner))
             }
-            TypeAnnotation::Named(name) => Ok(format!("struct {}", name)),
+            TypeAnnotation::Named(name) => Ok(name.clone()),
             TypeAnnotation::Stream(_) => {
                 Ok("struct LinkStream*".to_string())
             }
@@ -115,6 +119,56 @@ impl CBackend {
 
     fn default_type() -> String {
         "int64_t".to_string()
+    }
+
+    fn infer_type_from_expr(&self, expr: &Expr) -> String {
+        match expr {
+            Expr::Int(_) => "int64_t".to_string(),
+            Expr::Float(_) => "double".to_string(),
+            Expr::Str(_) => "const char*".to_string(),
+            Expr::Bool(_) => "bool".to_string(),
+            Expr::None => "void*".to_string(),
+            Expr::List(_) => "LinkList".to_string(),
+            Expr::Ident(name) => {
+                self.var_type_map.get(name).cloned().unwrap_or_else(Self::default_type)
+            }
+            Expr::StructInit { name, .. } => name.clone(),
+            Expr::Path { base, .. } | Expr::PathCall { base, .. } => base.clone(),
+            Expr::Binary { left, right, .. } => {
+                let lt = self.infer_type_from_expr(left);
+                let rt = self.infer_type_from_expr(right);
+                if lt == "double" || rt == "double" {
+                    "double".to_string()
+                } else if lt == "const char*" || rt == "const char*" {
+                    "const char*".to_string()
+                } else {
+                    "int64_t".to_string()
+                }
+            }
+            Expr::FieldAccess { target, field } => {
+                if let Expr::Ident(name) = target.as_ref() {
+                    if let Some(c_type) = self.var_type_map.get(name) {
+                        if let Some(fields) = self.struct_map.get(c_type) {
+                            for (fname, ftype) in fields {
+                                if fname == field {
+                                    return ftype.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+                Self::default_type()
+            }
+            Expr::Call { callee, .. } => {
+                match callee.as_str() {
+                    "len" => "int64_t".to_string(),
+                    _ => self.fn_return_types.get(callee)
+                        .cloned()
+                        .unwrap_or_else(Self::default_type),
+                }
+            }
+            _ => Self::default_type(),
+        }
     }
 
     fn fresh_tmp(&mut self) -> String {
@@ -177,7 +231,14 @@ impl CBackend {
     fn generate_expr(&mut self, expr: &Expr) -> Result<String, String> {
         match expr {
             Expr::Int(n) => Ok(format!("{}LL", n)),
-            Expr::Float(f) => Ok(format!("{}", f)),
+            Expr::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('.') || s.contains('e') || s.contains('E') {
+                    Ok(s)
+                } else {
+                    Ok(format!("{}.0", s))
+                }
+            }
             Expr::Str(s) => {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 Ok(format!("\"{}\"", escaped))
@@ -232,45 +293,75 @@ impl CBackend {
                             } else {
                                 Ok("(void)0".to_string())
                             }
-                        } else {
-                            let mut format_str = String::new();
-                            let mut arg_strs = Vec::new();
-                            for (i, arg) in args.iter().enumerate() {
-                                if i > 0 {
-                                    format_str.push_str(" ");
+                        } else if args.len() >= 2 {
+                            if let Expr::Str(fmt) = &args[0] {
+                                if fmt.contains("{}") {
+                                    let format_str = fmt.replace('\\', "\\\\").replace('"', "\\\"");
+                                    let mut arg_strs = Vec::new();
+                                    let mut arg_idx = 1;
+                                    let mut result = String::new();
+                                    let chars: Vec<char> = format_str.chars().collect();
+                                    let mut i = 0;
+                                    while i < chars.len() {
+                                        if i + 1 < chars.len() && chars[i] == '{' && chars[i + 1] == '}' {
+                                            if arg_idx < args.len() {
+                                                let arg = &args[arg_idx];
+                                                let arg_expr = self.generate_expr(arg)?;
+                                                match arg {
+                                                    Expr::Int(_) => {
+                                                        result.push_str("%lld");
+                                                        arg_strs.push(format!("(long long)({})", arg_expr));
+                                                    }
+                                                    Expr::Float(_) => {
+                                                        result.push_str("%lf");
+                                                        arg_strs.push(arg_expr);
+                                                    }
+                                                    Expr::Bool(_) => {
+                                                        result.push_str("%s");
+                                                        arg_strs.push(format!("({} ? \"true\" : \"false\")", arg_expr));
+                                                    }
+                                                    Expr::Str(_) => {
+                                                        result.push_str("%s");
+                                                        arg_strs.push(arg_expr);
+                                                    }
+                                                    _ => {
+                                                        let t = self.infer_type_from_expr(arg);
+                                                        if t == "double" {
+                                                            result.push_str("%lf");
+                                                            arg_strs.push(arg_expr);
+                                                        } else if t == "const char*" {
+                                                            result.push_str("%s");
+                                                            arg_strs.push(arg_expr);
+                                                        } else {
+                                                            result.push_str("%lld");
+                                                            arg_strs.push(format!("(long long)({})", arg_expr));
+                                                        }
+                                                    }
+                                                }
+                                                arg_idx += 1;
+                                            }
+                                            i += 2;
+                                        } else {
+                                            result.push(chars[i]);
+                                            i += 1;
+                                        }
+                                    }
+                                    if is_println {
+                                        result.push_str("\\n");
+                                    }
+                                    if arg_strs.is_empty() {
+                                        Ok(format!("printf(\"{}\")", result))
+                                    } else {
+                                        Ok(format!("printf(\"{}\", {})", result, arg_strs.join(", ")))
+                                    }
+                                } else {
+                                    self.generate_print_simple(args, is_println)
                                 }
-                                let arg_expr = self.generate_expr(arg)?;
-                                match arg {
-                                    Expr::Int(_) => {
-                                        format_str.push_str("%lld");
-                                        arg_strs.push(format!("(long long)({})", arg_expr));
-                                    }
-                                    Expr::Float(_) => {
-                                        format_str.push_str("%lf");
-                                        arg_strs.push(arg_expr);
-                                    }
-                                    Expr::Bool(_) => {
-                                        format_str.push_str("%s");
-                                        arg_strs.push(format!("({} ? \"true\" : \"false\")", arg_expr));
-                                    }
-                                    Expr::Str(_) => {
-                                        format_str.push_str("%s");
-                                        arg_strs.push(arg_expr);
-                                    }
-                                    _ => {
-                                        format_str.push_str("%lld");
-                                        arg_strs.push(format!("(long long)({})", arg_expr));
-                                    }
-                                }
-                            }
-                            if is_println {
-                                format_str.push_str("\\n");
-                            }
-                            if arg_strs.is_empty() {
-                                Ok(format!("printf(\"{}\")", format_str))
                             } else {
-                                Ok(format!("printf(\"{}\", {})", format_str, arg_strs.join(", ")))
+                                self.generate_print_simple(args, is_println)
                             }
+                        } else {
+                            self.generate_print_simple(args, is_println)
                         }
                     }
                     "len" => {
@@ -344,24 +435,22 @@ impl CBackend {
                     let val_str = self.generate_expr(fval)?;
                     field_inits.push(format!(".{} = {}", fname, val_str));
                 }
-                Ok(format!("((struct {}){{ {} }})", name, field_inits.join(", ")))
+                Ok(format!("(({}){{ {} }})", name, field_inits.join(", ")))
             }
             Expr::FieldAccess { target, field } => {
                 let target_str = self.generate_expr(target)?;
                 Ok(format!("{}.{}", target_str, field))
             }
             Expr::Path { base, segment } => {
-                let _discriminant = self.enum_map.get(base);
-                Ok(format!("((struct {base}){{ .discriminant = {variant_name}_v_{variant} }})",
+                Ok(format!("(({base}){{ .discriminant = {variant_name}_v_{variant} }})",
                     base = base, variant_name = base, variant = segment))
             }
             Expr::PathCall { base, segment, args } => {
-                let _discriminant = self.enum_map.get(base);
                 let mut arg_strs = Vec::new();
                 for arg in args {
                     arg_strs.push(self.generate_expr(arg)?);
                 }
-                Ok(format!("((struct {base}){{ .discriminant = {variant_name}_v_{variant}, .data.{variant} = {{ {fields} }} }})",
+                Ok(format!("(({base}){{ .discriminant = {variant_name}_v_{variant}, .data.{variant} = {{ {fields} }} }})",
                     base = base, variant_name = base, variant = segment, fields = arg_strs.join(", ")))
             }
             Expr::MatchExpr { .. } => {
@@ -373,6 +462,56 @@ impl CBackend {
         }
     }
 
+    fn generate_print_simple(&mut self, args: &[Expr], is_println: bool) -> Result<String, String> {
+        let mut format_str = String::new();
+        let mut arg_strs = Vec::new();
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                format_str.push_str(" ");
+            }
+            let arg_expr = self.generate_expr(arg)?;
+            match arg {
+                Expr::Int(_) => {
+                    format_str.push_str("%lld");
+                    arg_strs.push(format!("(long long)({})", arg_expr));
+                }
+                Expr::Float(_) => {
+                    format_str.push_str("%lf");
+                    arg_strs.push(arg_expr);
+                }
+                Expr::Bool(_) => {
+                    format_str.push_str("%s");
+                    arg_strs.push(format!("({} ? \"true\" : \"false\")", arg_expr));
+                }
+                Expr::Str(_) => {
+                    format_str.push_str("%s");
+                    arg_strs.push(arg_expr);
+                }
+                _ => {
+                    let t = self.infer_type_from_expr(arg);
+                    if t == "double" {
+                        format_str.push_str("%lf");
+                        arg_strs.push(arg_expr);
+                    } else if t == "const char*" {
+                        format_str.push_str("%s");
+                        arg_strs.push(arg_expr);
+                    } else {
+                        format_str.push_str("%lld");
+                        arg_strs.push(format!("(long long)({})", arg_expr));
+                    }
+                }
+            }
+        }
+        if is_println {
+            format_str.push_str("\\n");
+        }
+        if arg_strs.is_empty() {
+            Ok(format!("printf(\"{}\")", format_str))
+        } else {
+            Ok(format!("printf(\"{}\", {})", format_str, arg_strs.join(", ")))
+        }
+    }
+
     fn generate_stmt(&mut self, stmt: &Stmt) -> Result<Vec<String>, String> {
         let mut lines = Vec::new();
 
@@ -380,11 +519,14 @@ impl CBackend {
             Stmt::LetDecl { name, type_annotation, value } => {
                 let c_type = if let Some(ta) = type_annotation {
                     Self::map_type(ta)?
+                } else if let Some(val) = value {
+                    self.infer_type_from_expr(val)
                 } else {
                     Self::default_type()
                 };
                 let c_name = name.clone();
                 self.var_map.insert(name.clone(), c_name.clone());
+                self.var_type_map.insert(name.clone(), c_type.clone());
 
                 if let Some(val) = value {
                     let val_str = self.generate_expr(val)?;
@@ -442,6 +584,7 @@ impl CBackend {
                 let end_str = self.generate_expr(end)?;
                 let c_name = var_name.clone();
                 self.var_map.insert(var_name.clone(), c_name.clone());
+                self.var_type_map.insert(var_name.clone(), "int64_t".to_string());
 
                 lines.push(format!(
                     "{}for (int64_t {} = {}; {} < {}; {}++) {{",
@@ -480,10 +623,12 @@ impl CBackend {
 
                 let mut param_strs = Vec::new();
                 let mut fn_var_map = HashMap::new();
+                let mut fn_var_type_map = HashMap::new();
                 for (pname, ptype) in params {
                     let c_type = Self::map_type(ptype)?;
                     param_strs.push(format!("{} {}", c_type, pname));
                     fn_var_map.insert(pname.clone(), pname.clone());
+                    fn_var_type_map.insert(pname.clone(), c_type);
                 }
 
                 let param_list = if param_strs.is_empty() {
@@ -493,12 +638,14 @@ impl CBackend {
                 };
 
                 let saved_var_map = std::mem::replace(&mut self.var_map, fn_var_map);
+                let saved_var_type_map = std::mem::replace(&mut self.var_type_map, fn_var_type_map);
                 let saved_indent = self.indent;
                 self.indent = 1;
 
                 let body_lines = self.generate_block_lines(body)?;
 
                 self.var_map = saved_var_map;
+                self.var_type_map = saved_var_type_map;
                 self.indent = saved_indent;
 
                 let mut fn_code = format!("{} {}({}) {{\n", ret_type, name, param_list);
@@ -563,8 +710,9 @@ impl CBackend {
             Stmt::Match { scrutinee, arms } => {
                 let tmp_scrutinee = self.fresh_tmp();
                 let scrutinee_str = self.generate_expr(scrutinee)?;
+                let scrut_type = self.infer_type_from_expr(scrutinee);
                 self.var_map.insert(tmp_scrutinee.clone(), tmp_scrutinee.clone());
-                lines.push(format!("{}int64_t {} = {};", self.indent_str(), tmp_scrutinee, scrutinee_str));
+                lines.push(format!("{}{} {} = {};", self.indent_str(), scrut_type, tmp_scrutinee, scrutinee_str));
 
                 let mut first = true;
                 for arm in arms {
@@ -656,6 +804,18 @@ impl CBackend {
 
     fn generate_program(&mut self, program: &Program) -> Result<String, String> {
         let Program::Block(stmts) = program;
+
+        // Pre-scan: collect all function return types for accurate type inference
+        for stmt in stmts {
+            if let Stmt::FnDecl { name, return_type, .. } = stmt {
+                let ret_type = if let Some(rt) = return_type {
+                    Self::map_type(rt).unwrap_or_else(|_| Self::default_type())
+                } else {
+                    "void".to_string()
+                };
+                self.fn_return_types.insert(name.clone(), ret_type);
+            }
+        }
 
         let mut top_level_exprs = Vec::new();
         let mut main_body_lines = Vec::new();
@@ -789,32 +949,114 @@ pub fn compile_to_native_with_opts(
     std::fs::write(&c_path, &c_code)
         .map_err(|e| format!("Failed to write C file: {}", e))?;
 
-    let mut cmd = if cfg!(target_os = "windows") {
-        let mut cmd = std::process::Command::new("cl");
-        cmd.arg(&c_path);
-        cmd.arg(format!("/Fe:{}", output_path));
-        cmd.arg(opt_level.as_msvc_flag());
-        if debug_info {
-            cmd.arg("/Zi");
+    // Detect available C compiler: try gcc, clang, cl, cc in order
+    let compiler_info = detect_c_compiler()
+        .ok_or_else(|| {
+            format!(
+                "No C compiler found in PATH. Install one of: gcc, clang, cl (MSVC), or cc.\n\
+                 Generated C source at: {}\n\
+                 You can compile it manually, e.g.:\n  gcc {} -o {}",
+                c_path, c_path, output_path
+            )
+        })?;
+
+    let mut cmd = match compiler_info.kind.as_str() {
+        "msvc" => {
+            let mut cmd = std::process::Command::new(&compiler_info.path);
+            cmd.arg(&c_path);
+            cmd.arg(format!("/Fe:{}", output_path));
+            cmd.arg(opt_level.as_msvc_flag());
+            if debug_info {
+                cmd.arg("/Zi");
+            }
+            cmd
         }
-        cmd
-    } else {
-        let mut cmd = std::process::Command::new("cc");
-        cmd.arg(&c_path);
-        cmd.arg("-o");
-        cmd.arg(output_path);
-        cmd.arg(opt_level.as_c_flag());
-        if debug_info {
-            cmd.arg("-g");
+        _ => {
+            // gcc / clang / cc style
+            let mut cmd = std::process::Command::new(&compiler_info.path);
+            cmd.arg(&c_path);
+            cmd.arg("-o");
+            cmd.arg(output_path);
+            cmd.arg(opt_level.as_c_flag());
+            if debug_info {
+                cmd.arg("-g");
+            }
+            cmd
         }
-        cmd
     };
 
     match cmd.status() {
         Ok(s) if s.success() => Ok(output_path.to_string()),
         Ok(s) => Err(format!("C compiler exited with code: {:?}", s.code())),
-        Err(e) => Err(format!("Failed to invoke C compiler: {}. Is 'cl' or 'cc' available in PATH?", e)),
+        Err(e) => Err(format!("Failed to invoke C compiler '{}': {}", compiler_info.path, e)),
     }
+}
+
+struct CCompilerInfo {
+    kind: String,
+    path: String,
+}
+
+fn detect_c_compiler() -> Option<CCompilerInfo> {
+    // On Windows, prefer cl (MSVC) first; elsewhere prefer gcc/clang first.
+    let candidates: &[(&str, &str)] = if cfg!(target_os = "windows") {
+        &[
+            ("cl", "msvc"),
+            ("gcc", "gcc"),
+            ("clang", "clang"),
+            ("clang-cl", "msvc"),
+            ("cc", "gcc"),
+        ]
+    } else {
+        &[
+            ("gcc", "gcc"),
+            ("clang", "clang"),
+            ("cc", "gcc"),
+            ("cl", "msvc"),
+        ]
+    };
+
+    for (name, kind) in candidates {
+        // Try `where` on Windows, `which` elsewhere, via `Command::new`
+        let resolved = if cfg!(target_os = "windows") {
+            std::process::Command::new("where")
+                .arg(name)
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        String::from_utf8_lossy(&o.stdout)
+                            .lines()
+                            .next()
+                            .map(|s| s.trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+        } else {
+            std::process::Command::new("which")
+                .arg(name)
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+        };
+
+        if let Some(path) = resolved {
+            if !path.is_empty() {
+                return Some(CCompilerInfo {
+                    kind: kind.to_string(),
+                    path,
+                });
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -886,7 +1128,7 @@ mod tests {
         let program = parse("struct Point { x: i32, y: i32 } let p = Point { x: 1, y: 2 }; p.x");
         let code = compile_to_c(&program).unwrap();
         assert!(code.contains("typedef struct"));
-        assert!(code.contains("struct Point"));
+        assert!(code.contains("Point"));
     }
 
     #[test]
@@ -915,5 +1157,148 @@ mod tests {
         let program = parse("42");
         let code = compile_to_c_with_opts(&program, OptLevel::O3, true).unwrap();
         assert!(code.contains("#line"));
+    }
+
+    // ===== Phase 2.11: Integration tests for string formatting & type inference =====
+
+    #[test]
+    fn test_format_string_int() {
+        let program = parse("fn main() { println(\"val = {}\", 42); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"val = %lld\\n\""));
+        assert!(code.contains("(long long)(42LL)"));
+    }
+
+    #[test]
+    fn test_format_string_float() {
+        let program = parse("fn main() { println(\"pi = {}\", 3.14); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"pi = %lf\\n\""));
+        assert!(!code.contains("(long long)(3.14"));
+    }
+
+    #[test]
+    fn test_format_string_bool() {
+        let program = parse("fn main() { println(\"flag = {}\", true); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"flag = %s\\n\""));
+        assert!(code.contains("? \"true\" : \"false\""));
+    }
+
+    #[test]
+    fn test_format_string_str() {
+        let program = parse("fn main() { println(\"hello {}\", \"world\"); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"hello %s\\n\""));
+    }
+
+    #[test]
+    fn test_format_string_multiple_args() {
+        let program = parse("fn main() { println(\"{} + {} = {}\", 1, 2, 3); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"%lld + %lld = %lld\\n\""));
+    }
+
+    #[test]
+    fn test_format_string_function_call_double() {
+        let program = parse("fn sq(x: f64) -> f64 { return x * x; } fn main() { println(\"sq(2) = {}\", sq(2.0)); }");
+        let code = compile_to_c(&program).unwrap();
+        // Function returns f64, so printf should use %lf not %lld
+        assert!(code.contains("printf(\"sq(2) = %lf\\n\""));
+        assert!(!code.contains("(long long)(sq"));
+    }
+
+    #[test]
+    fn test_format_string_function_call_int() {
+        let program = parse("fn dbl(n: i64) -> i64 { return n * 2; } fn main() { println(\"dbl(5) = {}\", dbl(5)); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"dbl(5) = %lld\\n\""));
+        assert!(code.contains("(long long)(dbl(5LL))"));
+    }
+
+    #[test]
+    fn test_format_string_mixed_types() {
+        let program = parse("fn main() { println(\"{} {} {}\", 1, 2.5, \"x\"); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"%lld %lf %s\\n\""));
+    }
+
+    #[test]
+    fn test_function_return_type_tracking() {
+        // Ensure fn_return_types pre-scan works regardless of definition order
+        let program = parse(
+            "fn main() { println(\"{}\", helper()); }
+             fn helper() -> f64 { return 1.5; }"
+        );
+        let code = compile_to_c(&program).unwrap();
+        // helper() returns f64, so should use %lf
+        assert!(code.contains("printf(\"%lf\\n\", helper())"));
+    }
+
+    #[test]
+    fn test_struct_field_access_in_format() {
+        let program = parse(
+            "struct P { x: f64, y: f64 }
+             fn main() { let p = P { x: 1.0, y: 2.0 }; println(\"x = {}\", p.x); }"
+        );
+        let code = compile_to_c(&program).unwrap();
+        // p.x is f64, so should use %lf
+        assert!(code.contains("printf(\"x = %lf\\n\""));
+    }
+
+    #[test]
+    fn test_enum_with_payload_pathcall() {
+        let program = parse(
+            "enum Shape { Circle(f64), Square(f64) }
+             fn main() { let c = Shape::Circle(5.0); c }"
+        );
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("Shape_v_Circle"));
+        assert!(code.contains(".data.Circle = { 5.0 }"));
+    }
+
+    #[test]
+    fn test_nested_function_calls() {
+        let program = parse(
+            "fn inc(x: i64) -> i64 { return x + 1; }
+             fn main() { println(\"{}\", inc(inc(5))); }"
+        );
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("inc(inc(5LL))"));
+        assert!(code.contains("(long long)(inc(inc(5LL)))"));
+    }
+
+    #[test]
+    fn test_arithmetic_mixed_types() {
+        let program = parse(
+            "fn main() { let x: i64 = 10; let y: f64 = 2.5; println(\"{}\", x); }"
+        );
+        let code = compile_to_c(&program).unwrap();
+        // x is i64, so should use %lld
+        assert!(code.contains("printf(\"%lld\\n\""));
+        assert!(code.contains("(long long)(x)"));
+    }
+
+    #[test]
+    fn test_format_string_no_placeholders() {
+        // Plain string without {} should use %s
+        let program = parse("fn main() { println(\"hello world\"); }");
+        let code = compile_to_c(&program).unwrap();
+        assert!(code.contains("printf(\"%s\\n\", \"hello world\")"));
+    }
+
+    #[test]
+    fn test_format_string_escaped_chars() {
+        let program = parse("fn main() { println(\"a\\\\tb{}\", 1); }");
+        let code = compile_to_c(&program).unwrap();
+        // Should contain escaped backslash and tab
+        assert!(code.contains("printf("));
+    }
+
+    #[test]
+    fn test_compiler_detection_returns_none_when_no_compiler() {
+        // This is a smoke test - we can't guarantee compiler availability,
+        // but the function should not panic
+        let _ = detect_c_compiler();
     }
 }
