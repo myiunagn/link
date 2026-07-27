@@ -14,7 +14,7 @@ hide:
 ---
 
 !!! tip "v0.1 已发布"
-    当前版本支持:基本类型、控制流、函数、列表、`stream<T>` 数据流,**全球 12 种编程语言 FFI 互联**。
+    当前版本支持:基本类型、控制流、函数、列表、`stream<T>` 数据流、struct/enum 复合类型、async/await、flow 声明块、**全球 12 种编程语言 FFI 互联**、**C/LLVM 编译器后端**。
 
 ## 核心特性
 
@@ -44,7 +44,7 @@ hide:
 
     ---
 
-    Rust + LLVM 工具链,编译为原生可执行文件。无 GC,无运行时开销。
+    支持 C 代码生成和 LLVM IR 后端。O0-O3 优化等级,调试符号支持。无 GC,无运行时开销。
 
 </div>
 
@@ -161,7 +161,12 @@ stream result        = [6, 8, 10]
 | Phase 1.2:Python/C++ FFI | :material-check-circle:{.green} 完成 | libpython 动态加载,C++ via C ABI |
 | Phase 1.3:stream<T> | :material-check-circle:{.green} 完成 | 数据流核心类型 + 管道运算符 `\|` |
 | Phase 1.4:多语言 FFI | :material-check-circle:{.green} 完成 | WASM / Java / HTML/JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin |
-| Phase 2:LLVM 后端 | :material-clock-outline:{.yellow} 规划中 | 原生码编译 |
+| Phase 1.5:struct/enum | :material-check-circle:{.green} 完成 | 复合类型与模式匹配 |
+| Phase 1.6:bindgen | :material-check-circle:{.green} 完成 | C/Python/TypeScript 绑定生成 |
+| Phase 1.7:flow 块 | :material-check-circle:{.green} 完成 | 声明式数据流处理 |
+| Phase 1.8:async/await | :material-check-circle:{.green} 完成 | 异步编程与 sleep 原语 |
+| Phase 2.1:C 后端 | :material-check-circle:{.green} 完成 | C 代码生成,优化等级 O0-O3 |
+| Phase 2.2:LLVM 后端 | :material-check-circle:{.green} 完成 | LLVM IR 生成,优化通道 |
 
 ## 许可证
 

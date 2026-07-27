@@ -70,6 +70,10 @@ nav:
       - HTML/JS 互连: ffi/html.md
       - 进程桥接互连: ffi/process.md
       - 绑定生成器: ffi/bindgen.md
+  - 编译器:
+      - C 后端: compiler/c-backend.md
+      - LLVM 后端: compiler/llvm-backend.md
+      - CLI 使用: compiler/cli.md
   - 示例: examples.md
   - 设计规格: spec.md
 
