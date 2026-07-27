@@ -1,0 +1,4033 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Link — 一门为"互联"而生的语言:从 IoT 设备到游戏后端,再到多语言胶水层">
+      
+      
+      
+        <link rel="canonical" href="https://myiunagn.github.io/linkdoc/spec/">
+      
+      
+        <link rel="prev" href="../examples/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>设计规格 - Link 语言手册</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noto+Sans+SC:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Noto Sans SC";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/styles.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#link" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href=".." title="Link 语言手册" class="md-header__button md-logo" aria-label="Link 语言手册" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10.59 13.41c.41.39.41 1.03 0 1.42-.39.39-1.03.39-1.42 0a5.003 5.003 0 0 1 0-7.07l3.54-3.54a5.003 5.003 0 0 1 7.07 0 5.003 5.003 0 0 1 0 7.07l-1.49 1.49c.01-.82-.12-1.64-.4-2.42l.47-.48a2.98 2.98 0 0 0 0-4.24 2.98 2.98 0 0 0-4.24 0l-3.53 3.53a2.98 2.98 0 0 0 0 4.24m2.82-4.24c.39-.39 1.03-.39 1.42 0a5.003 5.003 0 0 1 0 7.07l-3.54 3.54a5.003 5.003 0 0 1-7.07 0 5.003 5.003 0 0 1 0-7.07l1.49-1.49c-.01.82.12 1.64.4 2.43l-.47.47a2.98 2.98 0 0 0 0 4.24 2.98 2.98 0 0 0 4.24 0l3.53-3.53a2.98 2.98 0 0 0 0-4.24.973.973 0 0 1 0-1.42"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Link 语言手册
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              设计规格
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="切换至暗色模式"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="切换至暗色模式" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue"  aria-label="切换至亮色模式"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="切换至亮色模式" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="分享" aria-label="分享" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/myiunagn/linkdoc" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    myiunagn/linkdoc
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="标签" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  首页
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../introduction/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  开始
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../basics/types/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  语言基础
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../ffi/overview/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  多语言互联
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../compiler/c-backend/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  编译器
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../examples/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  示例
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  设计规格
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Link 语言手册" class="md-nav__button md-logo" aria-label="Link 语言手册" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10.59 13.41c.41.39.41 1.03 0 1.42-.39.39-1.03.39-1.42 0a5.003 5.003 0 0 1 0-7.07l3.54-3.54a5.003 5.003 0 0 1 7.07 0 5.003 5.003 0 0 1 0 7.07l-1.49 1.49c.01-.82-.12-1.64-.4-2.42l.47-.48a2.98 2.98 0 0 0 0-4.24 2.98 2.98 0 0 0-4.24 0l-3.53 3.53a2.98 2.98 0 0 0 0 4.24m2.82-4.24c.39-.39 1.03-.39 1.42 0a5.003 5.003 0 0 1 0 7.07l-3.54 3.54a5.003 5.003 0 0 1-7.07 0 5.003 5.003 0 0 1 0-7.07l1.49-1.49c-.01.82.12 1.64.4 2.43l-.47.47a2.98 2.98 0 0 0 0 4.24 2.98 2.98 0 0 0 4.24 0l3.53-3.53a2.98 2.98 0 0 0 0-4.24.973.973 0 0 1 0-1.42"/></svg>
+
+    </a>
+    Link 语言手册
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/myiunagn/linkdoc" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    myiunagn/linkdoc
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    首页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    开始
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    开始
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../introduction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    介绍
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安装
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    快速开始
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../repl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REPL 交互模式
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语言基础
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    语言基础
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    变量与类型
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/operators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    运算符
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/control-flow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    控制流
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    函数
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/collections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    列表与字符串
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/composite-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    复合类型
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/flow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    flow 声明块
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../basics/async/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    异步编程
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    多语言互联
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    多语言互联
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    概述
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/c/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C 互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python 互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/cpp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++ 互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/wasm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebAssembly 互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/java/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Java 互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/html/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    HTML/JS 互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    进程桥接互连
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ffi/bindgen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    绑定生成器
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    编译器
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    编译器
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/c-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/llvm-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLVM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI 使用
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    示例
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    设计规格
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    设计规格
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 1 章:定位与核心理念
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 1 章:定位与核心理念">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 一句话定位
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 类比锚点
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 设计哲学(四条原则)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 核心抽象(语言内置一等概念)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.5 语言互联:核心切入点
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 2 章:类型系统(C++ 风格 + 互联扩展)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 2 章:类型系统(C++ 风格 + 互联扩展)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 设计原则
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-primitive-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 基本类型(Primitive Types)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-composite-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 复合类型(Composite Types)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 引用与所有权
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 互联领域类型(一等公民)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 游戏后端域类型(上层应用)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#27-iot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.7 IoT 域类型(上层应用)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.8 泛型与模板
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9 类型推导
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#210" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.10 类型系统总览
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 3 章:语法与语义
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 3 章:语法与语义">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 整体语法风格
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 声明块示例
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 管道表达式(Pipeline)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 函数
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 控制流
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-result-option" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 错误处理(Result + Option)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#37" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.7 模块系统
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#38" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.8 并发模型
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#39" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.9 多语言互操作
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 4 章:编译架构与运行时
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 4 章:编译架构与运行时">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 编译流水线(6 层)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 编译器实现语言:Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-ir" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 IR 分层
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 目标平台
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 内存模型
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 标准库结构
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 编译模式
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 5 章:MVP 落地路线(语言互联优先)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 5 章:MVP 落地路线(语言互联优先)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 MVP 定位调整
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 MVP 范围
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 分阶段路线图
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-phase-0-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Phase 0:骨架期(约 4 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-phase-1-mvp-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Phase 1:语言互联 MVP(约 8 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎉 Phase 1 完成总结
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-phase-2-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Phase 2:编译期 + 游戏后端(约 12 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-phase-3iot-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Phase 3:IoT 扩展期(约 10 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58-phase-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 Phase 4:生态期(持续)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#59" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.9 技术风险与应对
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#510" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.10 资源投入估算(单人)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#511" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.11 立即开始第一步
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 1 章:定位与核心理念
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 1 章:定位与核心理念">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 一句话定位
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 类比锚点
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 设计哲学(四条原则)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 核心抽象(语言内置一等概念)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.5 语言互联:核心切入点
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 2 章:类型系统(C++ 风格 + 互联扩展)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 2 章:类型系统(C++ 风格 + 互联扩展)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 设计原则
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-primitive-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 基本类型(Primitive Types)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-composite-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 复合类型(Composite Types)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 引用与所有权
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 互联领域类型(一等公民)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 游戏后端域类型(上层应用)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#27-iot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.7 IoT 域类型(上层应用)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.8 泛型与模板
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.9 类型推导
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#210" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.10 类型系统总览
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 3 章:语法与语义
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 3 章:语法与语义">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 整体语法风格
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 声明块示例
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 管道表达式(Pipeline)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 函数
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 控制流
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-result-option" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 错误处理(Result + Option)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#37" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.7 模块系统
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#38" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.8 并发模型
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#39" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.9 多语言互操作
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 4 章:编译架构与运行时
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 4 章:编译架构与运行时">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 编译流水线(6 层)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 编译器实现语言:Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-ir" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 IR 分层
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 目标平台
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 内存模型
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 标准库结构
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 编译模式
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        第 5 章:MVP 落地路线(语言互联优先)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="第 5 章:MVP 落地路线(语言互联优先)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 MVP 定位调整
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-mvp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 MVP 范围
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 分阶段路线图
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-phase-0-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 Phase 0:骨架期(约 4 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-phase-1-mvp-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Phase 1:语言互联 MVP(约 8 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎉 Phase 1 完成总结
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-phase-2-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 Phase 2:编译期 + 游戏后端(约 12 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-phase-3iot-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 Phase 3:IoT 扩展期(约 10 周)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58-phase-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 Phase 4:生态期(持续)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#59" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.9 技术风险与应对
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#510" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.10 资源投入估算(单人)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#511" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.11 立即开始第一步
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="link">Link 语言设计规格说明书<a class="headerlink" href="#link" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>版本</strong>: v0.1 (首个正式版本)
+<strong>日期</strong>: 2026-07-27
+<strong>状态</strong>: Phase 1 + Phase 2.1-2.2 已完成</p>
+</blockquote>
+<hr />
+<h2 id="1">第 1 章:定位与核心理念<a class="headerlink" href="#1" title="Permanent link">&para;</a></h2>
+<h3 id="11">1.1 一句话定位<a class="headerlink" href="#11" title="Permanent link">&para;</a></h3>
+<p><strong>Link 是一门专用于"互联"的静态类型声明式数据流语言,LLVM 编译为原生码。以多语言互联为第一切入点,延展到游戏后端与 IoT 设备互联。</strong></p>
+<h3 id="12">1.2 类比锚点<a class="headerlink" href="#12" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>类比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>领域定位</td>
+<td>SQL 之于数据库,Link 之于互联</td>
+</tr>
+<tr>
+<td>范式</td>
+<td>Terraform 的声明式 + 流式计算 + C++ 的类型严谨</td>
+</tr>
+<tr>
+<td>编译</td>
+<td>Rust 的 LLVM 路径</td>
+</tr>
+<tr>
+<td>语言互联</td>
+<td>类似 SWIG / Protobuf,但作为一等语言而非工具</td>
+</tr>
+<tr>
+<td>商业模式</td>
+<td>开源语言 + 收费云平台 + 协议/语言 provider 生态</td>
+</tr>
+</tbody>
+</table>
+<h3 id="13">1.3 设计哲学(四条原则)<a class="headerlink" href="#13" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>连接为一等公民</strong> —— <code>stream&lt;T&gt;</code> / <code>endpoint</code> / <code>group</code> 是语言内置类型,不是库里的 class</li>
+<li><strong>流是默认执行模型</strong> —— 数据从源到汇自动调度,无需手写并发</li>
+<li><strong>声明优先,无副作用</strong> —— 描述"要什么",不描述"怎么做"</li>
+<li><strong>多语言原生互通</strong> —— Link 不孤立存在,天然是其他语言的胶水层</li>
+</ol>
+<h3 id="14">1.4 核心抽象(语言内置一等概念)<a class="headerlink" href="#14" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>说明</th>
+<th>对应领域</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream&lt;T&gt;</code></td>
+<td>数据流,Link 的灵魂</td>
+<td>所有域通用</td>
+</tr>
+<tr>
+<td><code>endpoint</code></td>
+<td>连接端点(设备/玩家/服务)</td>
+<td>通用抽象</td>
+</tr>
+<tr>
+<td><code>group</code></td>
+<td>群组(房间/网关/集群)</td>
+<td>通用抽象</td>
+</tr>
+<tr>
+<td><code>component</code></td>
+<td>功能单元(thing/实体组件)</td>
+<td>通用抽象</td>
+</tr>
+<tr>
+<td><code>state&lt;T&gt;</code></td>
+<td>可观察持久状态</td>
+<td>通用抽象</td>
+</tr>
+<tr>
+<td><code>flow</code></td>
+<td>数据流定义</td>
+<td>声明式核心</td>
+</tr>
+<tr>
+<td><code>adapter</code> / <code>transport</code></td>
+<td>协议/传输适配器</td>
+<td>可扩展</td>
+</tr>
+<tr>
+<td><code>extern</code> / <code>export</code></td>
+<td>多语言互操作</td>
+<td>语言互联</td>
+</tr>
+</tbody>
+</table>
+<h3 id="15">1.5 语言互联:核心切入点<a class="headerlink" href="#15" title="Permanent link">&para;</a></h3>
+<p><strong>为什么先做语言互联?</strong></p>
+<ol>
+<li><strong>差异化最强</strong>:没有一门主流语言把多语言互操作当一等公民设计</li>
+<li><strong>冷启动最快</strong>:开发者不用全量切换到 Link,渐进式采用——在现有项目里嵌入 Link 代码</li>
+<li><strong>验证成本低</strong>:只需做核心语言 + 绑定生成器,不用做完整游戏后端/IoT 生态</li>
+<li><strong>后续扩展自然</strong>:语言互联验证成功后,游戏后端和 IoT 是自然延伸</li>
+</ol>
+<p><strong>Link 作为胶水语言的价值主张</strong>:</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Python 代码 ─────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                 │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>C++ 库    ───────┤
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                 ├── Link 胶水层 ── 统一数据流 ── 业务逻辑
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>JavaScript ──────┤
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                 │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>Go 服务   ───────┘
+</code></pre></div>
+<p>用 Link 写数据流编排,各语言写各自擅长的部分,Link 把它们无缝连起来。</p>
+<hr />
+<h2 id="2-c">第 2 章:类型系统(C++ 风格 + 互联扩展)<a class="headerlink" href="#2-c" title="Permanent link">&para;</a></h2>
+<h3 id="21">2.1 设计原则<a class="headerlink" href="#21" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>静态显式为主,局部推导为辅</strong> —— C++ 程序员的习惯,也是 LLVM 编译的根基</li>
+<li><strong>零成本抽象</strong> —— 泛型 + 编译期计算,运行时无额外开销</li>
+<li><strong>内置互联原语</strong> —— <code>stream&lt;T&gt;</code>、<code>endpoint</code>、<code>group</code> 是语言级类型</li>
+</ul>
+<h3 id="22-primitive-types">2.2 基本类型(Primitive Types)<a class="headerlink" href="#22-primitive-types" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>说明</th>
+<th>类比 C++</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>void</code></td>
+<td>空类型</td>
+<td><code>void</code></td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td>布尔</td>
+<td><code>bool</code></td>
+</tr>
+<tr>
+<td><code>i8</code> / <code>i16</code> / <code>i32</code> / <code>i64</code></td>
+<td>有符号整数</td>
+<td><code>int8_t</code> / <code>int16_t</code> / <code>int</code> / <code>long long</code></td>
+</tr>
+<tr>
+<td><code>u8</code> / <code>u16</code> / <code>u32</code> / <code>u64</code></td>
+<td>无符号整数</td>
+<td><code>uint8_t</code> 等</td>
+</tr>
+<tr>
+<td><code>f32</code> / <code>f64</code></td>
+<td>浮点数</td>
+<td><code>float</code> / <code>double</code></td>
+</tr>
+<tr>
+<td><code>char</code></td>
+<td>字符</td>
+<td><code>char</code></td>
+</tr>
+<tr>
+<td><code>str</code></td>
+<td>字符串切片</td>
+<td><code>std::string_view</code></td>
+</tr>
+<tr>
+<td><code>string</code></td>
+<td>堆字符串</td>
+<td><code>std::string</code></td>
+</tr>
+<tr>
+<td><code>int</code> / <code>uint</code></td>
+<td>机器字长整型</td>
+<td><code>int</code> / <code>unsigned int</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="23-composite-types">2.3 复合类型(Composite Types)<a class="headerlink" href="#23-composite-types" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>struct SensorReading {
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    temperature: f32;
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    humidity:    f32;
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    timestamp:   u64;
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>}
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>struct Packet&lt;T&gt; {
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    id:      u32;
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    payload: T;
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>}
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>enum DeviceStatus {
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    Online,
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    Offline,
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    Error(code: u16),
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>}
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>let readings: [f32; 10] = [0.0; 10];  // 固定长度数组
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>let buffer:   Vec&lt;u8&gt;   = Vec::new(); // 动态数组
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>let config:   Map&lt;str, str&gt; = Map::new();
+</code></pre></div>
+<h3 id="24">2.4 引用与所有权<a class="headerlink" href="#24" title="Permanent link">&para;</a></h3>
+<p>借鉴 C++ 值语义 + Rust 式借用检查(简化版,无生命周期标注)。</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>fn read_temp(sensor: &amp;TemperatureSensor) -&gt; f32 { ... }    // 不可变借用
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>fn set_unit(sensor: &amp;mut TemperatureSensor, unit: str) { ... } // 可变借用
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>fn take_ownership(sensor: TemperatureSensor) { ... }       // 所有权转移
+</code></pre></div>
+<p><strong>借用规则(简化版)</strong>:
+- 同一时间,一个值只能有**一个可变借用**或**任意数量不可变借用**
+- 借用不能超过被借值的生命周期(由编译器推导,不用手动标注)
+- 不跨函数检查生命周期(函数签名需显式标注引用,但不用生命周期参数)</p>
+<h3 id="25">2.5 互联领域类型(一等公民)<a class="headerlink" href="#25" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>// stream&lt;T&gt; —— 数据流核心类型
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>stream&lt;T&gt; {
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    fn filter(pred: fn(T) -&gt; bool) -&gt; stream&lt;T&gt;;
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    fn map&lt;U&gt;(f: fn(T) -&gt; U) -&gt; stream&lt;U&gt;;
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    fn window(duration: Duration) -&gt; stream&lt;Vec&lt;T&gt;&gt;;
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    fn aggregate&lt;U&gt;(op: str) -&gt; stream&lt;U&gt;;
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    fn for_each(f: fn(T)) -&gt; void;
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    fn sink(target: Sink&lt;T&gt;) -&gt; void;
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    fn join&lt;U, R&gt;(other: stream&lt;U&gt;, f: fn(T, U) -&gt; R) -&gt; stream&lt;R&gt;;
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>}
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>// endpoint —— 连接端点统一抽象
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>interface Endpoint {
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    id:    EndpointId;
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    event on_connect;
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    event on_disconnect;
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>    fn send&lt;T&gt;(msg: T);
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>    stream&lt;T&gt; recv&lt;T&gt;();
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>}
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>// group —— 群组抽象
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>interface Group {
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    id:       GroupId;
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>    members:  Set&lt;Endpoint&gt;;
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>    event on_member_join(e: Endpoint);
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>    event on_member_leave(e: Endpoint);
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>    fn broadcast&lt;T&gt;(msg: T, except: Option&lt;Endpoint&gt; = none);
+<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a>}
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>
+<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>// component —— 功能单元
+<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>interface Component {
+<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a>    name: str;
+<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a>    stream&lt;Change&gt; on_change;
+<a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a>}
+</code></pre></div>
+<h3 id="26">2.6 游戏后端域类型(上层应用)<a class="headerlink" href="#26" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>player :&gt; Endpoint {
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    session: Session;
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    entity: Option&lt;Entity&gt;;
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>}
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>room :&gt; Group {
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    max_players: u8;
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    tick_rate:   u32;
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    stream&lt;u32&gt; tick();
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>}
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>entity {
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    id: EntityId;
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    // 组件系统(ECS 风格)
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>}
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>state&lt;T&gt; {
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a>    key:    str;
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    value:  T;
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a>    stream&lt;T&gt; on_change();
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    fn get() -&gt; T;
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a>    fn set(v: T);
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a>}
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>matchmaker { ... }
+</code></pre></div>
+<h3 id="27-iot">2.7 IoT 域类型(上层应用)<a class="headerlink" href="#27-iot" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>device :&gt; Endpoint {
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    protocol: Adapter;
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    things:   [Thing];
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>}
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>thing :&gt; Component {
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    // 属性 / 方法 / 事件
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>}
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>adapter :&gt; Transport {
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    // 协议适配接口
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>}
+</code></pre></div>
+<h3 id="28">2.8 泛型与模板<a class="headerlink" href="#28" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>fn max&lt;T: Ord&gt;(a: T, b: T) -&gt; T {
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    if a &gt; b { a } else { b }
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>}
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>struct RingBuffer&lt;T, const N: usize&gt; {
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    data: [T; N];
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    head: usize;
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    tail: usize;
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>}
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>const MAX_DEVICES: usize = 1024;
+</code></pre></div>
+<h3 id="29">2.9 类型推导<a class="headerlink" href="#29" title="Permanent link">&para;</a></h3>
+<p>C++ <code>auto</code> 风格:局部变量可推导,<strong>函数签名和结构体字段必须显式标注</strong>。</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>let x = 42;       // 推导为 i32
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>let y = 3.14;     // 推导为 f64
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>let z: f32 = 3.14; // 显式标注
+</code></pre></div>
+<h3 id="210">2.10 类型系统总览<a class="headerlink" href="#210" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Link Type System
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>├── Primitive (void, bool, integers, floats, char, str, string)
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>├── Composite (struct, enum, array, Vec, Map, Option, Result)
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>├── Reference (&amp;T, &amp;mut T)
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>├── Function (fn(args) -&gt; ret)
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>├── Generic (template&lt;T&gt;, template&lt;const N: usize&gt;)
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>└── Interop Domain (first-class)
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    ├── stream&lt;T&gt;           (核心)
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    ├── endpoint / group    (通用连接抽象)
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    ├── component / state   (功能与状态)
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    ├── transport           (传输层接口)
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>    ├── player / room       (游戏域)
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    ├── device / thing      (IoT 域)
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    └── extern / export     (多语言互操作)
+</code></pre></div>
+<hr />
+<h2 id="3">第 3 章:语法与语义<a class="headerlink" href="#3" title="Permanent link">&para;</a></h2>
+<h3 id="31">3.1 整体语法风格<a class="headerlink" href="#31" title="Permanent link">&para;</a></h3>
+<p>三种语法形态各司其职:</p>
+<table>
+<thead>
+<tr>
+<th>形态</th>
+<th>用途</th>
+<th>风格</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>声明块</strong></td>
+<td>定义 endpoint / group / flow / component</td>
+<td>类 Terraform,声明式</td>
+</tr>
+<tr>
+<td><strong>管道表达式</strong></td>
+<td>数据流处理 <code>\|</code></td>
+<td>类 Elixir / Rust 迭代器</td>
+</tr>
+<tr>
+<td><strong>命令式块</strong></td>
+<td>函数体、事件处理器、计算逻辑</td>
+<td>类 C++ / Rust</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32">3.2 声明块示例<a class="headerlink" href="#32" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>// 声明一个数据流
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>flow HighTempAlert &quot;高温告警&quot; {
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    source: stream&lt;f32&gt; = TempSensor.temperature;
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    sample: every 1s;
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    pipeline:
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        TempSensor.temperature
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>            | filter(v) { v &gt; 35.0 }
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>            | window(5s)
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>            | avg()
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>            | sink(SmsNotifier(&quot;13800138000&quot;));
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>}
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>// 声明一个房间(游戏域)
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>room BattleArena &quot;对战房间&quot; {
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>    max_players: u8 = 4;
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>    tick_rate:   u32 = 30;
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>    on_player_join(p: Player) {
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>        p.entity = PlayerChar::spawn();
+<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>        room.broadcast(PlayerJoinMsg { player_id: p.id });
+<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>    }
+<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>}
+<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>
+<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>// 声明一个设备(IoT 域)
+<a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>device TempSensor &quot;车间温度传感器&quot; {
+<a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a>    transport: Modbus = Modbus(&quot;192.168.1.50:502&quot;, unit_id: u8 = 1);
+<a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a>
+<a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a>    things: [
+<a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>        thing temperature {
+<a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a>            register: u16 = 0;
+<a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a>            type:      f32;
+<a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a>            scale:     f32 = 0.1;
+<a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a>        }
+<a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a>    ]
+<a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a>}
+</code></pre></div>
+<h3 id="33-pipeline">3.3 管道表达式(Pipeline)<a class="headerlink" href="#33-pipeline" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>let alert_stream =
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    TempSensor.temperature
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>        | filter(temp) { temp &gt; 35.0 }
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>        | map(temp)  { temp * 9/5 + 32 }
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>        | window(5s)
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>        | avg();
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>let game_loop =
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    BattleArena.tick()
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>        | for_each(frame) {
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>            entities.update_physics(frame.dt);
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>            room.broadcast(FrameState { frame, positions: entities.positions() });
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>        };
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>let collision_events =
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>    stream::join(player.position_stream, bullet.position_stream)
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>        | filter(p, b) { distance(p, b) &lt; 0.5 }
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>        | map(p, b)    { Collision { player_id: p.id, bullet_id: b.id } };
+</code></pre></div>
+<p><strong>管道运算符 <code>|</code></strong>:左操作数是 <code>stream&lt;T&gt;</code>,右操作数是算子,返回新 stream。优先级最低(比 <code>||</code> 还低),右结合。</p>
+<h3 id="34">3.4 函数<a class="headerlink" href="#34" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>fn add(a: i32, b: i32) -&gt; i32 {
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    return a + b;
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>}
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>fn max&lt;T: Ord&gt;(a: T, b: T) -&gt; T {
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>    if a &gt; b { a } else { b }
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>}
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>fn divide(a: f32, b: f32) -&gt; (f32, bool) {
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    if b == 0.0 { return (0.0, false); }
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>    return (a / b, true);
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>}
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>inline fn lerp(a: f32, b: f32, t: f32) -&gt; f32 {
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>    return a + (b - a) * t;
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>}
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>consteval fn fibonacci(n: i32) -&gt; i32 {
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>    if n &lt;= 1 { return n; }
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>    return fibonacci(n - 1) + fibonacci(n - 2);
+<a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>}
+</code></pre></div>
+<h3 id="35">3.5 控制流<a class="headerlink" href="#35" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>if temperature &gt; 35.0 {
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    trigger_alert();
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>} else if temperature &lt; 0.0 {
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    trigger_freeze_warning();
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>}
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>match status {
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    DeviceStatus::Online =&gt; println(&quot;在线&quot;),
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>    DeviceStatus::Error(code) =&gt; println(&quot;错误: {}&quot;, code),
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    _ =&gt; println(&quot;其他&quot;),
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>}
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>for i in 0..10 { println(i); }
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>for player in room.players { player.send(msg); }
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>while queue.not_empty() { process(queue.pop()); }
+<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a>
+<a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a>loop {
+<a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a>    let msg = connection.recv();
+<a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a>    if msg.is_none() { break; }
+<a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a>    handle(msg.unwrap());
+<a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a>}
+</code></pre></div>
+<h3 id="36-result-option">3.6 错误处理(Result + Option)<a class="headerlink" href="#36-result-option" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>fn find_player(id: PlayerId) -&gt; Option&lt;Player&gt; { ... }
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>fn connect_device(addr: str) -&gt; Result&lt;Device, IoError&gt; { ... }
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>match connect_device(&quot;192.168.1.50&quot;) {
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    ok(dev) =&gt; dev.read(),
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>    err(e)  =&gt; log_error(e),
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>}
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>fn setup_sensors() -&gt; Result&lt;void, IoError&gt; {
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>    let temp = try! connect_device(&quot;192.168.1.50&quot;);
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>    let hum  = try! connect_device(&quot;192.168.1.51&quot;);
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>    return ok(());
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>}
+</code></pre></div>
+<h3 id="37">3.7 模块系统<a class="headerlink" href="#37" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>// 文件: game/rooms/battle.link
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>module game::rooms::battle;
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>import game::entities::player;
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>import game::systems::combat;
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>import iot::devices as dev;
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>pub room BattleArena { ... }
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>fn calculate_damage(a: &amp;Player, d: &amp;Player) -&gt; i32 { ... }
+</code></pre></div>
+<h3 id="38">3.8 并发模型<a class="headerlink" href="#38" title="Permanent link">&para;</a></h3>
+<p><strong>声明式并发</strong>:描述数据流和依赖,编译器自动调度。</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>flow sensor_a { TempSensor_A.temperature | log(); }
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>flow sensor_b { TempSensor_B.temperature | log(); }
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>// 两个 flow 自动并行,无需手动 thread
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>async fn load_asset(path: str) -&gt; Result&lt;Asset, IoError&gt; {
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    let data = try! async_io::read_file(path);
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    return ok(Asset::parse(data));
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>}
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>let results = join_all([
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>    load_asset(&quot;model.glb&quot;),
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>    load_asset(&quot;texture.png&quot;),
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>]);
+</code></pre></div>
+<p><strong>底层</strong>:async/await + 多线程调度器(类 Tokio)。编译器做无锁推导。</p>
+<h3 id="39">3.9 多语言互操作<a class="headerlink" href="#39" title="Permanent link">&para;</a></h3>
+<h4 id="391-link-extern">3.9.1 Link 调用其他语言(<code>extern</code>)<a class="headerlink" href="#391-link-extern" title="Permanent link">&para;</a></h4>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>extern &quot;C&quot; {
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    fn malloc(size: usize) -&gt; *mut void;
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>    fn free(ptr: *mut void);
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>}
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>extern &quot;python&quot; module &quot;numpy&quot; {
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    fn array(data: [f64]) -&gt; NumpyArray;
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>    fn mean(arr: NumpyArray) -&gt; f64;
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>}
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>extern &quot;js&quot; module &quot;./utils.js&quot; {
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>    fn format_date(ts: u64) -&gt; string;
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>    async fn fetch_json(url: str) -&gt; JsonValue;
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a>}
+<a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a>
+<a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a>extern &quot;rust&quot; crate &quot;serde_json&quot; {
+<a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a>    fn to_string&lt;T: Serialize&gt;(value: &amp;T) -&gt; Result&lt;string, Error&gt;;
+<a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a>}
+</code></pre></div>
+<h4 id="392-link-export">3.9.2 Link 导出给其他语言(<code>export</code>)<a class="headerlink" href="#392-link-export" title="Permanent link">&para;</a></h4>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>export &quot;C&quot; {
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>    fn link_init() -&gt; bool;
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    fn link_create_room(max_players: u8) -&gt; RoomHandle;
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>    fn link_shutdown();
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>}
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>export &quot;python&quot; module &quot;link_game&quot; {
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>    class Room {
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>        fn __init__(max_players: u8);
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>        fn broadcast(msg: str);
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>        property player_count: i32;
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>    }
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>    fn start_server(port: u16) -&gt; bool;
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>}
+<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>
+<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>export &quot;typescript&quot; module &quot;link-game-sdk&quot; {
+<a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>    interface Room {
+<a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a>        id: string;
+<a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a>        players: Player[];
+<a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a>        broadcast(msg: any): void;
+<a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a>    }
+<a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a>    function createRoom(maxPlayers: number): Room;
+<a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a>}
+</code></pre></div>
+<h4 id="393">3.9.3 类型映射表<a class="headerlink" href="#393" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Link 类型</th>
+<th>C/C++</th>
+<th>Rust</th>
+<th>Python</th>
+<th>TypeScript</th>
+<th>Go</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>i32/i64</code></td>
+<td><code>int32_t/int64_t</code></td>
+<td><code>i32/i64</code></td>
+<td><code>int</code></td>
+<td><code>number</code></td>
+<td><code>int32/int64</code></td>
+</tr>
+<tr>
+<td><code>f32/f64</code></td>
+<td><code>float/double</code></td>
+<td><code>f32/f64</code></td>
+<td><code>float</code></td>
+<td><code>number</code></td>
+<td><code>float32/64</code></td>
+</tr>
+<tr>
+<td><code>bool</code></td>
+<td><code>bool</code></td>
+<td><code>bool</code></td>
+<td><code>bool</code></td>
+<td><code>boolean</code></td>
+<td><code>bool</code></td>
+</tr>
+<tr>
+<td><code>string</code></td>
+<td><code>const char*</code></td>
+<td><code>&amp;str</code> / <code>String</code></td>
+<td><code>str</code></td>
+<td><code>string</code></td>
+<td><code>string</code></td>
+</tr>
+<tr>
+<td><code>Vec&lt;T&gt;</code></td>
+<td><code>T* + size_t</code></td>
+<td><code>Vec&lt;T&gt;</code></td>
+<td><code>list[T]</code></td>
+<td><code>T[]</code></td>
+<td><code>[]T</code></td>
+</tr>
+<tr>
+<td><code>Map&lt;K,V&gt;</code></td>
+<td><code>struct + callbacks</code></td>
+<td><code>HashMap&lt;K,V&gt;</code></td>
+<td><code>dict[K,V]</code></td>
+<td><code>Map&lt;K,V&gt;</code></td>
+<td><code>map[K]V</code></td>
+</tr>
+<tr>
+<td><code>Option&lt;T&gt;</code></td>
+<td><code>T*</code> (nullable)</td>
+<td><code>Option&lt;T&gt;</code></td>
+<td><code>T \| None</code></td>
+<td><code>T \| null</code></td>
+<td><code>*T</code></td>
+</tr>
+<tr>
+<td><code>Result&lt;T,E&gt;</code></td>
+<td>返回码 + out 参数</td>
+<td><code>Result&lt;T,E&gt;</code></td>
+<td><code>raise</code> / <code>tuple</code></td>
+<td><code>throw</code> / <code>T</code></td>
+<td><code>(T, error)</code></td>
+</tr>
+<tr>
+<td><code>stream&lt;T&gt;</code></td>
+<td>回调 + handle</td>
+<td><code>impl Stream</code></td>
+<td><code>async generator</code></td>
+<td><code>AsyncIterable&lt;T&gt;</code></td>
+<td><code>&lt;-chan T</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="394">3.9.4 绑定生成工具<a class="headerlink" href="#394" title="Permanent link">&para;</a></h4>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--lang<span class="w"> </span>python<span class="w">   </span>my_project.link<span class="w"> </span>-o<span class="w"> </span>link_py/
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--lang<span class="w"> </span>typescript<span class="w"> </span>my_project.link<span class="w"> </span>-o<span class="w"> </span>link_ts/
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--lang<span class="w"> </span>rust<span class="w">     </span>my_project.link<span class="w"> </span>-o<span class="w"> </span>link_rs/
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--lang<span class="w"> </span>go<span class="w">       </span>my_project.link<span class="w"> </span>-o<span class="w"> </span>link_go/
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--lang<span class="w"> </span>c<span class="w">        </span>my_project.link<span class="w"> </span>-o<span class="w"> </span>link_c/
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--from<span class="w"> </span>c<span class="w">       </span>header.h<span class="w">       </span>-o<span class="w"> </span>bindings.link
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>link<span class="w"> </span>bindgen<span class="w"> </span>--from<span class="w"> </span>python<span class="w">  </span>module.py<span class="w">      </span>-o<span class="w"> </span>bindings.link
+</code></pre></div>
+<h4 id="395">3.9.5 互操作架构<a class="headerlink" href="#395" title="Permanent link">&para;</a></h4>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>┌─────────────────────────────────────────────────┐
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>│              多语言 SDK 层                        │
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>│  Python SDK / TS SDK / Rust SDK / Go SDK        │
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>│  (自动生成绑定代码 + 类型定义)                    │
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>├─────────────────────────────────────────────────┤
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>│              C ABI 层 (稳定接口)                 │
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>├─────────────────────────────────────────────────┤
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>│         Link 运行时 (liblinkrt)                  │
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>│  调度器 / 内存管理 / IO / stream 引擎            │
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>├─────────────────────────────────────────────────┤
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>│         FFI 调用外部语言 (C/Python/JS/...)       │
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>└─────────────────────────────────────────────────┘
+</code></pre></div>
+<hr />
+<h2 id="4">第 4 章:编译架构与运行时<a class="headerlink" href="#4" title="Permanent link">&para;</a></h2>
+<h3 id="41-6">4.1 编译流水线(6 层)<a class="headerlink" href="#41-6" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>源码 → Lexer → Token流 → Parser → AST → 语义分析 → HIR
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>  → MIR(SSA+CFG) → LLVM IR → 机器码(x64/ARM64/WASM)
+</code></pre></div>
+<h3 id="42-rust">4.2 编译器实现语言:Rust<a class="headerlink" href="#42-rust" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>crate</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>linkc_lexer</code></td>
+<td>词法分析</td>
+</tr>
+<tr>
+<td><code>linkc_parser</code></td>
+<td>语法分析 → AST</td>
+</tr>
+<tr>
+<td><code>linkc_hir</code></td>
+<td>HIR 定义 + 语义分析 + 类型推导</td>
+</tr>
+<tr>
+<td><code>linkc_mir</code></td>
+<td>MIR 定义 + 优化 + borrow 检查</td>
+</tr>
+<tr>
+<td><code>linkc_llvm</code></td>
+<td>LLVM 代码生成</td>
+</tr>
+<tr>
+<td><code>linkc_driver</code></td>
+<td>编译器主入口</td>
+</tr>
+<tr>
+<td><code>linkc_std</code></td>
+<td>标准库</td>
+</tr>
+<tr>
+<td><code>linkc_bindgen</code></td>
+<td>多语言绑定生成器</td>
+</tr>
+<tr>
+<td><code>linkc_lsp</code></td>
+<td>LSP 服务器</td>
+</tr>
+<tr>
+<td><code>linkc_runtime</code></td>
+<td>运行时库(调度器/IO/stream 引擎)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="43-ir">4.3 IR 分层<a class="headerlink" href="#43-ir" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>IR 层</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AST</td>
+<td>忠实反映源码结构,错误定位</td>
+</tr>
+<tr>
+<td>HIR</td>
+<td>去语法糖、类型标注完成,高级分析</td>
+</tr>
+<tr>
+<td>MIR</td>
+<td>SSA + CFG,borrow 检查、优化</td>
+</tr>
+<tr>
+<td>LLVM IR</td>
+<td>底层优化、代码生成</td>
+</tr>
+</tbody>
+</table>
+<h3 id="44">4.4 目标平台<a class="headerlink" href="#44" title="Permanent link">&para;</a></h3>
+<ul>
+<li>x86_64-pc-windows-msvc</li>
+<li>x86_64-unknown-linux-gnu</li>
+<li>aarch64-unknown-linux-gnu</li>
+<li>wasm32-unknown-unknown</li>
+</ul>
+<h3 id="45">4.5 内存模型<a class="headerlink" href="#45" title="Permanent link">&para;</a></h3>
+<ul>
+<li>默认值语义(栈分配,拷贝/移动)</li>
+<li>堆分配通过 <code>Box&lt;T&gt;</code> / <code>Vec&lt;T&gt;</code> / <code>String</code></li>
+<li><code>Arc&lt;T&gt;</code> 跨任务共享</li>
+<li>无 GC,无运行时开销</li>
+</ul>
+<h3 id="46">4.6 标准库结构<a class="headerlink" href="#46" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>liblink-std/
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>├── core/              # 核心库(no_std)
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>│   ├── primitives.link
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>│   ├── option.link
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>│   ├── result.link
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>│   ├── vec.link
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>│   ├── string.link
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>│   ├── map.link
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>│   ├── iter.link
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>│   └── cmp.link
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>├── link/              # 互联核心(语言灵魂)
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a>│   ├── stream.link
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a>│   ├── endpoint.link
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a>│   ├── group.link
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a>│   ├── component.link
+<a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a>│   ├── state.link
+<a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a>│   ├── transport.link
+<a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a>│   ├── scheduler.link
+<a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a>│   └── codec.link
+<a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a>├── interop/           # 多语言互操作
+<a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a>│   ├── ffi.link
+<a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a>│   ├── py_link.link
+<a id="__codelineno-21-23" name="__codelineno-21-23" href="#__codelineno-21-23"></a>│   ├── js_link.link
+<a id="__codelineno-21-24" name="__codelineno-21-24" href="#__codelineno-21-24"></a>│   └── bindgen.link
+<a id="__codelineno-21-25" name="__codelineno-21-25" href="#__codelineno-21-25"></a>├── async/             # 异步运行时
+<a id="__codelineno-21-26" name="__codelineno-21-26" href="#__codelineno-21-26"></a>│   ├── runtime.link
+<a id="__codelineno-21-27" name="__codelineno-21-27" href="#__codelineno-21-27"></a>│   ├── task.link
+<a id="__codelineno-21-28" name="__codelineno-21-28" href="#__codelineno-21-28"></a>│   ├── io.link
+<a id="__codelineno-21-29" name="__codelineno-21-29" href="#__codelineno-21-29"></a>│   └── sync/
+<a id="__codelineno-21-30" name="__codelineno-21-30" href="#__codelineno-21-30"></a>├── game/              # 游戏后端域(Phase 3)
+<a id="__codelineno-21-31" name="__codelineno-21-31" href="#__codelineno-21-31"></a>│   ├── player.link
+<a id="__codelineno-21-32" name="__codelineno-21-32" href="#__codelineno-21-32"></a>│   ├── room.link
+<a id="__codelineno-21-33" name="__codelineno-21-33" href="#__codelineno-21-33"></a>│   ├── entity.link
+<a id="__codelineno-21-34" name="__codelineno-21-34" href="#__codelineno-21-34"></a>│   └── matchmaker.link
+<a id="__codelineno-21-35" name="__codelineno-21-35" href="#__codelineno-21-35"></a>├── iot/               # IoT 域(Phase 3)
+<a id="__codelineno-21-36" name="__codelineno-21-36" href="#__codelineno-21-36"></a>│   ├── device.link
+<a id="__codelineno-21-37" name="__codelineno-21-37" href="#__codelineno-21-37"></a>│   ├── thing.link
+<a id="__codelineno-21-38" name="__codelineno-21-38" href="#__codelineno-21-38"></a>│   └── protocols/
+<a id="__codelineno-21-39" name="__codelineno-21-39" href="#__codelineno-21-39"></a>└── os/                # 操作系统接口
+<a id="__codelineno-21-40" name="__codelineno-21-40" href="#__codelineno-21-40"></a>    ├── fs.link
+<a id="__codelineno-21-41" name="__codelineno-21-41" href="#__codelineno-21-41"></a>    ├── net.link
+<a id="__codelineno-21-42" name="__codelineno-21-42" href="#__codelineno-21-42"></a>    └── time.link
+</code></pre></div>
+<h3 id="47">4.7 编译模式<a class="headerlink" href="#47" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>link build --debug</code></td>
+<td>无优化 + 调试信息,编译快</td>
+</tr>
+<tr>
+<td><code>link build --release</code></td>
+<td>LLVM O2 优化</td>
+</tr>
+<tr>
+<td><code>link build --wasm</code></td>
+<td>编译到 WASM</td>
+</tr>
+<tr>
+<td><code>link run</code></td>
+<td>编译+运行</td>
+</tr>
+<tr>
+<td><code>link test</code></td>
+<td>编译并运行测试</td>
+</tr>
+<tr>
+<td><code>link repl</code></td>
+<td>交互式 REPL</td>
+</tr>
+<tr>
+<td><code>link jit</code></td>
+<td>JIT 执行</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-mvp">第 5 章:MVP 落地路线(语言互联优先)<a class="headerlink" href="#5-mvp" title="Permanent link">&para;</a></h2>
+<h3 id="51-mvp">5.1 MVP 定位调整<a class="headerlink" href="#51-mvp" title="Permanent link">&para;</a></h3>
+<p><strong>核心变更</strong>:MVP 从"游戏后端"调整为**"语言互联胶水"**。</p>
+<p><strong>MVP 一句话产品</strong>:</p>
+<blockquote>
+<p>用 Link 写声明式数据流,无缝调用和组合 Python/C++/JS/Go 代码,多语言项目的连接器。</p>
+</blockquote>
+<p><strong>为什么这个方向更优</strong>:
+1. <strong>即时价值</strong>:开发者不用切换语言,在现有项目里嵌入 Link 就能获益
+2. <strong>差异化</strong>:没有竞品把多语言互操作当一等语言设计
+3. <strong>验证快</strong>:只需核心语言 + 绑定生成器,不用做完整游戏生态
+4. <strong>自然延展</strong>:语言互联跑通后,游戏后端和 IoT 是上层应用域</p>
+<h3 id="52-mvp">5.2 MVP 范围<a class="headerlink" href="#52-mvp" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>MVP 做(✅)</th>
+<th>MVP 不做(❌)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>语言内核</strong></td>
+<td>基本类型 + struct + enum + 函数 + if/match/循环 + 泛型基础</td>
+<td>模板元编程 / 宏</td>
+</tr>
+<tr>
+<td><strong>声明式核心</strong></td>
+<td><code>stream&lt;T&gt;</code> + 管道运算符 <code>\|</code> + <code>flow</code> 块</td>
+<td><code>device</code> / <code>player</code> / <code>room</code>(后续加)</td>
+</tr>
+<tr>
+<td><strong>并发</strong></td>
+<td>单线程 stream + 异步基础</td>
+<td>多线程调度器 / 完整 borrow 检查</td>
+</tr>
+<tr>
+<td><strong>编译方式</strong></td>
+<td>树漫游解释器(Phase 0-1)→ LLVM(Phase 2)</td>
+<td>初始解释器阶段先跑起来</td>
+</tr>
+<tr>
+<td><strong>核心卖点</strong></td>
+<td><strong>多语言互操作:extern + export + bindgen</strong></td>
+<td>游戏后端 / IoT 完整域</td>
+</tr>
+<tr>
+<td><strong>支持语言</strong></td>
+<td><strong>C + Python + TypeScript</strong>(3 个 MVP 语言)</td>
+<td>Go / Rust / Java 等</td>
+</tr>
+<tr>
+<td><strong>stream 跨语言</strong></td>
+<td><strong>stream<T> 在各语言中映射为异步迭代器</strong></td>
+<td>完整跨语言 stream 回压</td>
+</tr>
+<tr>
+<td><strong>工具链</strong></td>
+<td>CLI(build/run/bindgen) + 基础错误提示</td>
+<td>LSP / REPL / JIT / 调试器</td>
+</tr>
+<tr>
+<td><strong>标准库</strong></td>
+<td>核心集合 + stream + async 基础 + FFI</td>
+<td>完整 std / 游戏 ECS / 物联网协议</td>
+</tr>
+</tbody>
+</table>
+<h3 id="53">5.3 分阶段路线图<a class="headerlink" href="#53" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>Phase 0        Phase 1          Phase 2          Phase 3          Phase 4
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a> 骨架期        语言互联MVP      编译期+游戏       IoT扩展期         生态期
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>──────────   ──────────      ──────────       ──────────       ──────────
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a> 词法分析      stream核心       LLVM后端         IoT域            云平台
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a> 语法分析      flow声明         性能优化         多协议           Provider市场
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a> 解释器       多语言互操作      借用检查         游戏ECS          商业化
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a> 基本类型     C/Python/TS      WASM目标         匹配器
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a> 函数/控制流   bindgen工具      LSP              状态持久化
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a> 错误提示      Demo项目         标准库完善
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a> ~4周          ~8周             ~12周            ~10周            持续
+</code></pre></div>
+<h3 id="54-phase-0-4">5.4 Phase 0:骨架期(约 4 周)<a class="headerlink" href="#54-phase-0-4" title="Permanent link">&para;</a></h3>
+<p><strong>目标</strong>:有一门能跑的玩具语言,验证编译流水线。</p>
+<p><strong>交付物</strong>:
+- Lexer:关键字、标识符、字面量、基本运算符
+- Parser:函数定义、let 绑定、if/else、循环、表达式
+- 树漫游解释器:能跑斐波那契、简单计算
+- 类型系统:基本类型 + 简单推导(无泛型)
+- CLI:<code>link run file.link</code>
+- 测试:解析器测试 + 解释器测试</p>
+<p><strong>结束标志</strong>:正确运行以下代码并输出 55</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>fn fib(n: i32) -&gt; i32 {
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>    if n &lt;= 1 { return n; }
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>    return fib(n - 1) + fib(n - 2);
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>}
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>fn main() {
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>    println(fib(10));
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>}
+</code></pre></div>
+<h3 id="55-phase-1-mvp-8">5.5 Phase 1:语言互联 MVP(约 8 周)<a class="headerlink" href="#55-phase-1-mvp-8" title="Permanent link">&para;</a></h3>
+<p><strong>目标</strong>:Link 能和 Python / C / TypeScript 双向互操作,做出第一个有实用价值的 demo。</p>
+<p><strong>交付物</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream&lt;T&gt;</code></td>
+<td>核心类型 + filter/map/window/for_each 算子</td>
+</tr>
+<tr>
+<td><code>flow</code> 声明块</td>
+<td>声明式数据流定义 + 自动调度</td>
+</tr>
+<tr>
+<td>管道运算符</td>
+<td><code>\|</code> 语法 + 类型检查</td>
+</tr>
+<tr>
+<td>泛型基础</td>
+<td>函数模板 + 结构体模板</td>
+</tr>
+<tr>
+<td>Option / Result</td>
+<td>错误处理基础</td>
+</tr>
+<tr>
+<td><strong>C ABI 层</strong></td>
+<td><code>extern "C"</code> + <code>export "C"</code>,稳定的 C 接口</td>
+</tr>
+<tr>
+<td><strong>Python 绑定</strong></td>
+<td>Python SDK + 绑定生成器,支持 stream 映射为 async generator</td>
+</tr>
+<tr>
+<td><strong>TypeScript 绑定</strong></td>
+<td>TS SDK + .d.ts 生成,stream 映射为 AsyncIterable</td>
+</tr>
+<tr>
+<td>异步运行时</td>
+<td>单线程 async + 基础 IO</td>
+</tr>
+<tr>
+<td><strong>bindgen 工具</strong></td>
+<td><code>link bindgen --lang python/ts/c</code> 自动生成</td>
+</tr>
+<tr>
+<td>反向绑定</td>
+<td>从 C 头文件/Python 模块生成 Link extern 声明</td>
+</tr>
+<tr>
+<td>Demo 项目</td>
+<td>一个多语言混合 demo:Python 做数据科学 + Link 做数据流编排 + TS 做前端展示</td>
+</tr>
+<tr>
+<td>文档</td>
+<td>快速开始 + 互操作指南</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结束标志</strong>:一个完整的多语言混合应用 demo,Link 作为数据胶水层连接 Python 和 TS,性能优于纯 Python。</p>
+<h4 id="551-phase-1">5.5.1 Phase 1 实施进度<a class="headerlink" href="#551-phase-1" title="Permanent link">&para;</a></h4>
+<p>按子阶段拆分的实际推进情况:</p>
+<table>
+<thead>
+<tr>
+<th>子阶段</th>
+<th>内容</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Phase 1.1</td>
+<td>C FFI 基础(<code>extern "C"</code> / <code>export "C"</code> + libloading 动态加载)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.2</td>
+<td>Python + C++ FFI(libpython 动态加载 + <code>extern "C"</code> ABI)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.3</td>
+<td><code>stream&lt;T&gt;</code> 核心类型 + 管道运算符 <code>\|</code>(stream/map/filter/for_each/collect)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.4</td>
+<td>多语言 FFI 扩展(WASM / Java / HTML-JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin,共 12 种语言)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.5</td>
+<td>struct / enum 复合类型 + match 模式匹配(含 <code>::</code> 路径、payload 解构、字面量模式)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.6</td>
+<td><code>export "&lt;lang&gt;"</code> 绑定生成器(C 头文件 / Python .pyi / TypeScript .d.ts)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.7</td>
+<td><code>flow</code> 声明块 + 自动调度(source / sample / pipeline 字段,串行执行)</td>
+<td>✅ 完成</td>
+</tr>
+<tr>
+<td>Phase 1.8</td>
+<td>异步运行时(async/await/sleep 语法)+ 多语言 Demo 项目</td>
+<td>✅ 完成</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Phase 1.5 实现要点</strong>:</p>
+<ul>
+<li>Lexer 新增 <code>::</code> (<code>DoubleColon</code>) token 以支持 <code>Type::Variant</code> 路径语法</li>
+<li>Parser 扩展 AST:<code>StructDecl</code> / <code>EnumDecl</code> / <code>Match</code>(语句)与 <code>FieldAccess</code> / <code>Path</code> / <code>StructInit</code> / <code>PathCall</code> / <code>MatchExpr</code>(表达式)</li>
+<li>Interpreter 新增 <code>Value::StructInstance</code> / <code>Value::EnumValue</code>,<code>InterpContext</code> 新增 <code>struct_defs</code> / <code>enum_defs</code> 注册表</li>
+<li><code>match</code> 既可作语句也可作表达式;支持通配符、绑定、字面量、枚举变体、带参数变体解构 5 种 Pattern</li>
+<li>return 机制改用 <code>InterpContext.return_value</code> 直接传递 <code>Value</code>,避免序列化复杂类型</li>
+</ul>
+<p><strong>Phase 1.6 实现要点</strong>:</p>
+<ul>
+<li>新增 <code>linkc_bindgen</code> crate,定义 <code>Generator</code> trait + <code>TargetLang</code> 枚举 + <code>collect_exports</code> / <code>generate</code> 入口</li>
+<li>实现三个后端:<code>CGenerator</code>(.h,含 include guard / <code>extern "C"</code> / <code>&lt;stdint.h&gt;</code>)、<code>PythonGenerator</code>(.pyi,含 <code>AsyncIterable</code> / <code>async def</code>)、<code>TypeScriptGenerator</code>(.d.ts,含 <code>declare module</code> / <code>Promise&lt;T&gt;</code>)</li>
+<li>共享 <code>TypeMapper</code> trait 统一处理类型映射(整数 → <code>int32_t</code> / <code>int</code> / <code>number</code> 等),<code>stream&lt;T&gt;</code> 在 Python/TS 中映射为 <code>AsyncIterable</code></li>
+<li>多 export 块自动合并;按 <code>--lang</code> 过滤目标语言块;关键字冲突标识符自动加下划线后缀</li>
+<li>CLI 新增 <code>link bindgen --lang &lt;lang&gt; &lt;input.link&gt; [-o &lt;output&gt;] [--module &lt;name&gt;]</code> 子命令,默认模块名从输入文件名推导</li>
+<li>20 个测试通过(11 单测 + 9 集成),涵盖三种语言生成、合并、过滤、指针类型、async 处理</li>
+</ul>
+<p><strong>Phase 1.7 实现要点</strong>:</p>
+<ul>
+<li>Lexer 新增 <code>Flow</code> / <code>Pipeline</code> / <code>Source</code> / <code>Sample</code> 4 个关键字</li>
+<li>Parser 新增 <code>Stmt::FlowDecl { name, description, source, pipeline }</code> AST 节点与 <code>parse_flow_decl</code> 函数,支持 <code>source:</code> / <code>sample:</code> / <code>pipeline:</code> 三个字段</li>
+<li><code>sample:</code> 字段当前仅解析不执行(跳过到分号),时间调度留待 Phase 1.8</li>
+<li><code>source</code> 关键字在表达式上下文中回退为 <code>Ident("source")</code> 变量,允许 pipeline 引用 flow 块内的 source 绑定</li>
+<li>Interpreter 实现 <code>eval_flow</code> 函数:为 flow 创建独立子作用域(避免 source 变量泄露),求值 source 表达式并绑定,然后求值 pipeline 表达式</li>
+<li>v0.1 树漫游解释器无真正并发,"自动调度"等价于"立即串行执行";多个 flow 按源码出现顺序执行,返回最后一个的值</li>
+<li>修复 <code>+</code> 运算符不支持 <code>str + str</code> 字符串拼接的 bug(此前会尝试转 float 报错)</li>
+<li>14 个新测试通过(8 interpreter + 4 parser + 1 lexer + 1 字符串拼接),总 176 测试全绿</li>
+</ul>
+<p><strong>Phase 1.8 实现要点</strong>:</p>
+<ul>
+<li>Lexer 新增 <code>Await</code> 关键字(<code>async</code> 此前已存在但仅用于 export 块)</li>
+<li>Parser 扩展 <code>Stmt::FnDecl</code> 添加 <code>is_async</code> 字段,<code>parse_fn_decl</code> 支持 <code>async fn</code> 前缀;<code>parse_stmt</code> 将 <code>Token::Async</code> 路由到 <code>parse_fn_decl</code></li>
+<li>新增 <code>Expr::Await(Box&lt;Expr&gt;)</code> AST 节点,<code>parse_unary</code> 支持 <code>await &lt;expr&gt;</code> 前缀运算符(优先级同 <code>!</code> / <code>-</code>)</li>
+<li>Interpreter 实现 <code>Expr::Await</code> 求值:v0.1 阻塞语义,直接求值内部表达式;真正并发调度留待 v0.2 LLVM 后端</li>
+<li>新增 <code>sleep(ms)</code> 内置函数作为异步原语,用 <code>std::thread::sleep</code> 阻塞当前线程</li>
+<li>修复 <code>+</code> 运算符不支持 <code>list + list</code> 拼接的 bug(此前走 else 分支尝试转 float 报错)</li>
+<li>构建 <a href="https://github.com/myiunagn/link/blob/main/examples/multilang_demo.link">multilang_demo.link</a> 端到端 Demo:Link 编排 + C++ 计算(fib/factorial/sqrt)+ Python 数据处理(math/os)+ async/await + flow 流式处理</li>
+<li>8 个新测试通过(5 interpreter + 2 parser + 1 lexer),总 174 测试全绿</li>
+</ul>
+<hr />
+<h3 id="phase-1">🎉 Phase 1 完成总结<a class="headerlink" href="#phase-1" title="Permanent link">&para;</a></h3>
+<p><strong>Phase 1 全部 8 个子阶段已完成</strong>,Link v0.1 MVP 实现了:</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基本类型</td>
+<td>int / float / str / bool / none / list</td>
+</tr>
+<tr>
+<td>控制流</td>
+<td>if/else / while / for / loop / break / continue</td>
+</tr>
+<tr>
+<td>函数</td>
+<td>声明 / 递归 / 闭包 / <strong>async fn</strong></td>
+</tr>
+<tr>
+<td>复合类型</td>
+<td>struct / enum / <strong>match 模式匹配</strong>(5 种 Pattern)</td>
+</tr>
+<tr>
+<td>stream<T></td>
+<td>stream / map / filter / for_each / collect + 管道运算符 <code>\|</code></td>
+</tr>
+<tr>
+<td>flow 块</td>
+<td>声明式数据流(source / sample / pipeline)</td>
+</tr>
+<tr>
+<td>async / await</td>
+<td>语法完整(v0.1 阻塞语义,v0.2 真正并发)</td>
+</tr>
+<tr>
+<td>多语言 FFI</td>
+<td><strong>12 种语言</strong>:C / C++ / Python / WASM / Java / HTML-JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin</td>
+</tr>
+<tr>
+<td>绑定生成</td>
+<td><code>link bindgen</code> 生成 C 头文件 / Python .pyi / TypeScript .d.ts</td>
+</tr>
+<tr>
+<td>CLI</td>
+<td><code>link run</code> / <code>link repl</code> / <code>link bindgen</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>测试覆盖</strong>:174 个单元/集成测试全部通过</p>
+<p><strong>Demo 验证</strong>:<a href="https://github.com/myiunagn/link/blob/main/examples/multilang_demo.link">multilang_demo.link</a> 展示 Link 作为多语言胶水层的完整价值</p>
+<p><strong>下一步</strong>:Phase 2(LLVM 编译后端 + 游戏后端域类型),见 5.6 节</p>
+<h3 id="56-phase-2-12">5.6 Phase 2:编译期 + 游戏后端(约 12 周)<a class="headerlink" href="#56-phase-2-12" title="Permanent link">&para;</a></h3>
+<p><strong>目标</strong>:LLVM 编译上线,游戏后端域加入。</p>
+<p><strong>交付物</strong>:
+- HIR/MIR:中间表示 + SSA + 优化 pass
+- LLVM 后端:x86_64 代码生成 + 基本优化
+- 借用检查:编译期内存安全
+- WASM 目标:浏览器能跑
+- 游戏域:Player + Room + WebSocket + 帧同步
+- 性能:stream 处理达 C 级水平
+- LSP 服务器:编辑器智能提示</p>
+<h3 id="57-phase-3iot-10">5.7 Phase 3:IoT 扩展期(约 10 周)<a class="headerlink" href="#57-phase-3iot-10" title="Permanent link">&para;</a></h3>
+<p><strong>目标</strong>:IoT 域上线,双应用域互通。</p>
+<p><strong>交付物</strong>:
+- IoT 域:Device / Thing / Adapter
+- IoT 协议:MQTT + Modbus + HTTP
+- 游戏域深化:ECS + 匹配器 + 状态持久化
+- 多语言扩展:Go + Rust 绑定
+- 部署工具:Docker + 一键部署</p>
+<h3 id="58-phase-4">5.8 Phase 4:生态期(持续)<a class="headerlink" href="#58-phase-4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Link Cloud:托管平台(SaaS)</li>
+<li>Provider Registry:语言/协议/组件市场</li>
+<li>包管理器 linkpm</li>
+<li>Playground:在线编辑器</li>
+<li>企业版</li>
+</ul>
+<h3 id="59">5.9 技术风险与应对<a class="headerlink" href="#59" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>风险</th>
+<th>概率</th>
+<th>影响</th>
+<th>应对策略</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLVM 后端开发周期过长</td>
+<td>中</td>
+<td>高</td>
+<td>Phase 1 用解释器验证需求,Phase 2 再上 LLVM</td>
+</tr>
+<tr>
+<td>多语言 FFI 复杂性超预期</td>
+<td>高</td>
+<td>中</td>
+<td>先做 C ABI 作为基础,Python/TS 通过 C 层间接交互</td>
+</tr>
+<tr>
+<td>stream 跨语言语义不统一</td>
+<td>中</td>
+<td>中</td>
+<td>定义清晰的 stream 协议(类似 Reactive Streams),各语言按协议实现</td>
+</tr>
+<tr>
+<td>生态冷启动</td>
+<td>高</td>
+<td>高</td>
+<td>绑定生成器快速接入现有生态,提供丰富 demo</td>
+</tr>
+<tr>
+<td>一人开发进度不可控</td>
+<td>高</td>
+<td>高</td>
+<td>严格 MVP,每个 Phase 明确交付物</td>
+</tr>
+</tbody>
+</table>
+<h3 id="510">5.10 资源投入估算(单人)<a class="headerlink" href="#510" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>时间</th>
+<th>核心产出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Phase 0</td>
+<td>~4 周</td>
+<td>能跑的玩具语言</td>
+</tr>
+<tr>
+<td>Phase 1</td>
+<td>~8 周</td>
+<td>语言互联 MVP + 多语言 demo</td>
+</tr>
+<tr>
+<td>Phase 2</td>
+<td>~12 周</td>
+<td>LLVM 编译 + 游戏后端</td>
+</tr>
+<tr>
+<td>Phase 3</td>
+<td>~10 周</td>
+<td>IoT 域 + 多语言扩展</td>
+</tr>
+<tr>
+<td><strong>到 1.0</strong></td>
+<td><strong>~8-9 个月</strong></td>
+<td><strong>生产可用的 Link 1.0</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="511">5.11 立即开始第一步<a class="headerlink" href="#511" title="Permanent link">&para;</a></h3>
+<ol>
+<li>搭项目骨架:Rust workspace,4 个核心 crate</li>
+<li>写 Lexer + 单元测试</li>
+<li>写 Parser(递归下降)</li>
+<li>写树漫游解释器</li>
+<li>一周内跑出 fib(10) = 55</li>
+</ol>
+<hr />
+<p><em>本文档为 Link 语言 v0.1 设计规格,后续随项目进展迭代更新。</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/myiunagn/linkdoc" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.tabs", "navigation.top", "navigation.indexes", "navigation.expand", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

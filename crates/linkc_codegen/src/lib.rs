@@ -223,11 +223,89 @@ impl CBackend {
                 Ok(format!("{}({})", op_str, operand_str))
             }
             Expr::Call { callee, args } => {
-                let mut arg_strs = Vec::new();
-                for arg in args {
-                    arg_strs.push(self.generate_expr(arg)?);
+                match callee.as_str() {
+                    "print" | "println" => {
+                        let is_println = callee == "println";
+                        if args.is_empty() {
+                            if is_println {
+                                Ok("puts(\"\")".to_string())
+                            } else {
+                                Ok("(void)0".to_string())
+                            }
+                        } else {
+                            let mut format_str = String::new();
+                            let mut arg_strs = Vec::new();
+                            for (i, arg) in args.iter().enumerate() {
+                                if i > 0 {
+                                    format_str.push_str(" ");
+                                }
+                                let arg_expr = self.generate_expr(arg)?;
+                                match arg {
+                                    Expr::Int(_) => {
+                                        format_str.push_str("%lld");
+                                        arg_strs.push(format!("(long long)({})", arg_expr));
+                                    }
+                                    Expr::Float(_) => {
+                                        format_str.push_str("%lf");
+                                        arg_strs.push(arg_expr);
+                                    }
+                                    Expr::Bool(_) => {
+                                        format_str.push_str("%s");
+                                        arg_strs.push(format!("({} ? \"true\" : \"false\")", arg_expr));
+                                    }
+                                    Expr::Str(_) => {
+                                        format_str.push_str("%s");
+                                        arg_strs.push(arg_expr);
+                                    }
+                                    _ => {
+                                        format_str.push_str("%lld");
+                                        arg_strs.push(format!("(long long)({})", arg_expr));
+                                    }
+                                }
+                            }
+                            if is_println {
+                                format_str.push_str("\\n");
+                            }
+                            if arg_strs.is_empty() {
+                                Ok(format!("printf(\"{}\")", format_str))
+                            } else {
+                                Ok(format!("printf(\"{}\", {})", format_str, arg_strs.join(", ")))
+                            }
+                        }
+                    }
+                    "len" => {
+                        if args.len() != 1 {
+                            return Err("len() takes exactly 1 argument".to_string());
+                        }
+                        let arg = &args[0];
+                        let arg_str = self.generate_expr(arg)?;
+                        match arg {
+                            Expr::Str(_) => {
+                                Ok(format!("strlen({})", arg_str))
+                            }
+                            Expr::List(_) => {
+                                Ok(format!("({}).count", arg_str))
+                            }
+                            _ => {
+                                Ok(format!("({}).count", arg_str))
+                            }
+                        }
+                    }
+                    "sleep" => {
+                        if args.len() != 1 {
+                            return Err("sleep() takes exactly 1 argument".to_string());
+                        }
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("(Sleep((DWORD)({})), (void)0)", arg_str))
+                    }
+                    _ => {
+                        let mut arg_strs = Vec::new();
+                        for arg in args {
+                            arg_strs.push(self.generate_expr(arg)?);
+                        }
+                        Ok(format!("{}({})", callee, arg_strs.join(", ")))
+                    }
                 }
-                Ok(format!("{}({})", callee, arg_strs.join(", ")))
             }
             Expr::IfExpr { condition, then_value, else_value } => {
                 let cond_str = self.generate_expr(condition)?;
@@ -641,6 +719,13 @@ impl CBackend {
         output.push_str("#include <stdlib.h>\n");
         output.push_str("#include <string.h>\n");
         output.push_str("#include <stdbool.h>\n");
+        output.push_str("#ifdef _WIN32\n");
+        output.push_str("#include <windows.h>\n");
+        output.push_str("#else\n");
+        output.push_str("#include <unistd.h>\n");
+        output.push_str("#define Sleep(x) usleep((x) * 1000)\n");
+        output.push_str("#define DWORD unsigned int\n");
+        output.push_str("#endif\n");
         output.push_str("\n");
 
         output.push_str("typedef struct {\n");

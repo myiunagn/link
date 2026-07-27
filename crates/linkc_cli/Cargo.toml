@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 linkc_lexer = { path = "../linkc_lexer" }
 linkc_parser = { path = "../linkc_parser" }
+linkc_sema = { path = "../linkc_sema" }
 linkc_interpreter = { path = "../linkc_interpreter" }
 linkc_bindgen = { path = "../linkc_bindgen" }
 linkc_codegen = { path = "../linkc_codegen" }

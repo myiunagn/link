@@ -141,6 +141,16 @@ fn run_compile(args: &[String]) -> Result<(), String> {
     let mut parser = linkc_parser::Parser::new(tokens);
     let program = parser.parse_program()?;
 
+    let errors = linkc_sema::check_program(&program);
+    if !errors.is_empty() {
+        for err in &errors {
+            eprintln!("{}", err);
+        }
+        return Err(format!("Type checking failed with {} error(s)", errors.len()));
+    }
+
+    let program = linkc_sema::const_fold(&program);
+
     let stem = std::path::Path::new(input_path)
         .file_stem()
         .and_then(|s| s.to_str())

@@ -1,0 +1,104 @@
+// Link 编译器演示程序
+// 演示: 函数、结构体、枚举、match、列表、循环、递归等
+
+// ============================================
+// 1. 基本函数和递归
+// ============================================
+fn fib(n: i64) -> i64 {
+    if n < 2 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn factorial(n: i64) -> i64 {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+// ============================================
+// 2. 结构体
+// ============================================
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+fn distance_sq(p1: Point, p2: Point) -> f64 {
+    let dx = p1.x - p2.x;
+    let dy = p1.y - p2.y;
+    return (dx * dx + dy * dy);
+}
+
+// ============================================
+// 3. 枚举和 match
+// ============================================
+enum Shape {
+    Circle(f64),
+    Rectangle(f64, f64),
+    Square(f64),
+}
+
+fn area(shape: Shape) -> f64 {
+    match shape {
+        Shape::Circle(r) => {
+            return 3.14159 * r * r;
+        }
+        Shape::Rectangle(w, h) => {
+            return w * h;
+        }
+        Shape::Square(s) => {
+            return s * s;
+        }
+    }
+}
+
+// ============================================
+// 4. 主程序
+// ============================================
+fn main() {
+    println("=== Link Compiler Demo ===");
+
+    println("1. Recursive functions:");
+    println("fib(10) = ");
+    println(fib(10));
+    println("factorial(5) = ");
+    println(factorial(5));
+
+    println("2. Structs:");
+    let p1 = Point { x: 0.0, y: 0.0 };
+    let p2 = Point { x: 3.0, y: 4.0 };
+    println("distance squared = ");
+    println(distance_sq(p1, p2));
+
+    println("3. Enums and pattern matching:");
+    let c = Shape::Circle(5.0);
+    let r = Shape::Rectangle(3.0, 4.0);
+    let s = Shape::Square(2.5);
+    println("circle area = ");
+    println(area(c));
+    println("rectangle area = ");
+    println(area(r));
+    println("square area = ");
+    println(area(s));
+
+    println("4. Lists and loops:");
+    let nums = [1, 2, 3, 4, 5];
+    let total = 0;
+    let i = 0;
+    while i < len(nums) {
+        total = total + nums[i];
+        i = i + 1;
+    }
+    println("sum of [1,2,3,4,5] = ");
+    println(total);
+
+    println("5. For loops:");
+    for i in 1..6 {
+        println(i);
+    }
+
+    println("=== Demo Complete ===");
+}
