@@ -1,0 +1,9 @@
+[package]
+name = "linkc_interpreter"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+linkc_lexer = { path = "../linkc_lexer" }
+linkc_parser = { path = "../linkc_parser" }
+libloading = "0.8"

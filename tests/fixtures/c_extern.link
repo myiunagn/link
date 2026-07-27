@@ -1,0 +1,22 @@
+// C FFI 测试示例
+// 调用 C 标准库函数
+
+extern "C" {
+    fn abs(n: i32) -> i32;
+    fn sqrt(x: f64) -> f64;
+}
+
+// 测试整数函数
+let x = abs(-42);
+println("abs(-42) =", x);
+
+// 测试浮点函数
+let y = sqrt(16.0);
+println("sqrt(16.0) =", y);
+
+// 在表达式中使用
+let z = abs(-10) + 5;
+println("abs(-10) + 5 =", z);
+
+// 返回最后表达式的值
+abs(-100)

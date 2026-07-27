@@ -1,0 +1,30 @@
+// Python FFI 测试示例
+// 调用 Python 标准库函数
+
+extern "python" module "math" {
+    fn sqrt(x: f64) -> f64;
+    fn pow(base: f64, exp: f64) -> f64;
+    fn floor(x: f64) -> f64;
+}
+
+extern "python" module "os" {
+    fn getcwd() -> str;
+}
+
+// 测试浮点函数
+let y = sqrt(16.0);
+println("math.sqrt(16.0) =", y);
+
+// 测试两参数函数
+let p = pow(2.0, 10.0);
+println("math.pow(2.0, 10.0) =", p);
+
+// 测试字符串返回
+let cwd = getcwd();
+println("os.getcwd() =", cwd);
+
+// 在表达式中混合使用
+let combined = sqrt(25.0) + pow(2.0, 3.0);
+println("sqrt(25) + pow(2,3) =", combined);
+
+sqrt(144.0)

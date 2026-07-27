@@ -1,0 +1,7 @@
+[package]
+name = "linkc_parser"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+linkc_lexer = { path = "../linkc_lexer" }

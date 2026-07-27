@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/linkc_lexer",
+    "crates/linkc_parser",
+    "crates/linkc_interpreter",
+    "crates/linkc_cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"

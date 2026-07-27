@@ -1,0 +1,80 @@
+// C++ FFI 测试示例
+// 通过 C ABI 桥接调用 C++ 共享库中的函数
+// 关键:C++ 函数必须用 extern "C" 导出,Link 用 extern "C++" 加载对应 DLL/SO
+
+extern "C++" module "examples/cpp_demo.dll" {
+    // 简单算术
+    fn cpp_add(a: i32, b: i32) -> i32;
+    fn cpp_sub(a: i32, b: i32) -> i32;
+    fn cpp_mul(a: i32, b: i32) -> i32;
+
+    // 浮点(C++ <cmath>)
+    fn cpp_sqrt(x: f64) -> f64;
+    fn cpp_pow(base: f64, exp: f64) -> f64;
+
+    // 递归
+    fn cpp_factorial(n: i32) -> i32;
+    fn cpp_fib(n: i32) -> i32;
+
+    // 字符串返回
+    fn cpp_version() -> str;
+    fn cpp_greet(name: str) -> str;
+
+    // 布尔
+    fn cpp_is_even(n: i32) -> bool;
+
+    // 三参数(C++ STL 内部使用)
+    fn cpp_max3(a: i32, b: i32, c: i32) -> i32;
+    fn cpp_average(a: i32, b: i32, c: i32) -> f64;
+}
+
+// ---- 简单算术 ----
+let s = cpp_add(3, 4);
+println("cpp_add(3, 4) =", s);
+
+let d = cpp_sub(10, 7);
+println("cpp_sub(10, 7) =", d);
+
+let p = cpp_mul(6, 7);
+println("cpp_mul(6, 7) =", p);
+
+// ---- 浮点 ----
+let sq = cpp_sqrt(144.0);
+println("cpp_sqrt(144.0) =", sq);
+
+let pw = cpp_pow(2.0, 10.0);
+println("cpp_pow(2.0, 10.0) =", pw);
+
+// ---- 递归 ----
+let f = cpp_factorial(5);
+println("cpp_factorial(5) =", f);
+
+let fib10 = cpp_fib(10);
+println("cpp_fib(10) =", fib10);
+
+// ---- 字符串 ----
+let v = cpp_version();
+println("cpp_version() =", v);
+
+let g = cpp_greet("Link");
+println("cpp_greet(\"Link\") =", g);
+
+// ---- 布尔 ----
+let e = cpp_is_even(42);
+println("cpp_is_even(42) =", e);
+
+let o = cpp_is_even(7);
+println("cpp_is_even(7) =", o);
+
+// ---- 三参数 ----
+let m = cpp_max3(3, 9, 6);
+println("cpp_max3(3, 9, 6) =", m);
+
+let avg = cpp_average(10, 20, 30);
+println("cpp_average(10, 20, 30) =", avg);
+
+// ---- 表达式中混合使用 ----
+let combined = cpp_add(cpp_factorial(3), cpp_fib(5));
+println("factorial(3) + fib(5) =", combined);
+
+cpp_add(100, 23)

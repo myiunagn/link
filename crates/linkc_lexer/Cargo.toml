@@ -1,0 +1,6 @@
+[package]
+name = "linkc_lexer"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
