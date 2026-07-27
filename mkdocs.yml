@@ -62,6 +62,10 @@ nav:
       - C 互连: ffi/c.md
       - Python 互连: ffi/python.md
       - C++ 互连: ffi/cpp.md
+      - WebAssembly 互连: ffi/wasm.md
+      - Java 互连: ffi/java.md
+      - HTML/JS 互连: ffi/html.md
+      - 进程桥接互连: ffi/process.md
   - 示例: examples.md
   - 设计规格: spec.md
 

@@ -106,6 +106,10 @@ fn run_file(filename: &str) -> Result<(), String> {
         linkc_interpreter::Value::NativeFunction { name, .. } => println!("<native fn {}>", name),
         linkc_interpreter::Value::ExternFunction { name, .. } => println!("<extern fn {}>", name),
         linkc_interpreter::Value::PythonFunction { name, .. } => println!("<python fn {}>", name),
+        linkc_interpreter::Value::WasmFunction { name, .. } => println!("<wasm fn {}>", name),
+        linkc_interpreter::Value::JavaFunction { name, .. } => println!("<java fn {}>", name),
+        linkc_interpreter::Value::HtmlFunction { name, .. } => println!("<html fn {}>", name),
+        linkc_interpreter::Value::ProcessFunction { name, language, .. } => println!("<{} fn {}>", language, name),
     }
     Ok(())
 }
@@ -129,6 +133,10 @@ fn print_value(val: &linkc_interpreter::Value) {
         linkc_interpreter::Value::NativeFunction { name, .. } => print!("<native fn {}>", name),
         linkc_interpreter::Value::ExternFunction { name, .. } => print!("<extern fn {}>", name),
         linkc_interpreter::Value::PythonFunction { name, .. } => print!("<python fn {}>", name),
+        linkc_interpreter::Value::WasmFunction { name, .. } => print!("<wasm fn {}>", name),
+        linkc_interpreter::Value::JavaFunction { name, .. } => print!("<java fn {}>", name),
+        linkc_interpreter::Value::HtmlFunction { name, .. } => print!("<html fn {}>", name),
+        linkc_interpreter::Value::ProcessFunction { name, language, .. } => print!("<{} fn {}>", language, name),
         linkc_interpreter::Value::Stream(items) => {
             print!("stream[");
             for (i, item) in items.iter().enumerate() {

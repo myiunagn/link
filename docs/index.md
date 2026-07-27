@@ -14,7 +14,7 @@ hide:
 ---
 
 !!! tip "v0.1 已发布"
-    当前版本支持:基本类型、控制流、函数、列表,**C / Python / C++ 三向 FFI 互联**。
+    当前版本支持:基本类型、控制流、函数、列表、`stream<T>` 数据流,**全球 12 种编程语言 FFI 互联**。
 
 ## 核心特性
 
@@ -31,8 +31,8 @@ hide:
 
     ---
 
-    天然是其他语言的胶水层。一行 `extern "python"` 即可调用 Python 标准库,
-    一行 `extern "C++"` 即可加载 C++ DLL/SO。
+    天然是其他语言的胶水层。一行 `extern` 即可调用全球 12 种编程语言:
+    C / C++ / Python / WASM / Java / JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin。
 
 - :material-code-braces: **静态类型 + 声明式**
 
@@ -67,15 +67,29 @@ extern "C++" module "cpp_demo.dll" {
     fn cpp_greet(name: str) -> str;
 }
 
+// 调用 WebAssembly 模块
+extern "wasm" module "module.wasm" {
+    fn add(a: i32, b: i32) -> i32;
+}
+
 let x = abs(-42);
 let y = sqrt(16.0);
 let f = cpp_factorial(5);
 let g = cpp_greet("Link");
+let w = add(3, 4);
 
 println("abs(-42)        =", x);
 println("math.sqrt(16.0) =", y);
 println("cpp_factorial(5) =", f);
 println("cpp_greet(\"Link\") =", g);
+println("wasm add(3, 4)  =", w);
+
+// stream<T> 数据流 + 管道运算符
+let result = stream([1, 2, 3, 4, 5])
+    | map(fn(x) -> i64 { return x * 2; })
+    | filter(fn(x) -> bool { return x > 5; })
+    | collect();
+println("stream result   =", result);  // [6, 8, 10]
 ```
 
 输出:
@@ -85,6 +99,8 @@ abs(-42)        = 42
 math.sqrt(16.0) = 4
 cpp_factorial(5) = 120
 cpp_greet("Link") = Hello, Link! from C++
+wasm add(3, 4)  = 7
+stream result   = [6, 8, 10]
 ```
 
 ## 立即开始
@@ -131,7 +147,8 @@ cpp_greet("Link") = Hello, Link! from C++
 | Phase 0:骨架 | :material-check-circle:{.green} 完成 | Lexer / Parser / Interpreter |
 | Phase 1.1:C FFI | :material-check-circle:{.green} 完成 | 动态加载 libc/msvcrt,调用 `abs` / `sqrt` |
 | Phase 1.2:Python/C++ FFI | :material-check-circle:{.green} 完成 | libpython 动态加载,C++ via C ABI |
-| Phase 1.3:stream<T> | :material-clock-outline:{.yellow} 规划中 | 数据流核心类型 |
+| Phase 1.3:stream<T> | :material-check-circle:{.green} 完成 | 数据流核心类型 + 管道运算符 `\|` |
+| Phase 1.4:多语言 FFI | :material-check-circle:{.green} 完成 | WASM / Java / HTML/JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin |
 | Phase 2:LLVM 后端 | :material-clock-outline:{.yellow} 规划中 | 原生码编译 |
 
 ## 许可证

@@ -5,7 +5,16 @@ use linkc_parser::{Program, Stmt, Expr, Block, BinOp, UnaryOp, TypeAnnotation, F
 use libloading::{Library, Symbol};
 
 pub mod python;
+pub mod wasm;
+pub mod java;
+pub mod html;
+pub mod process;
 pub use python::PythonRuntime;
+pub use wasm::WasmRuntime;
+pub use java::JavaRuntime;
+pub use html::HtmlRuntime;
+pub use process::ProcessRuntime;
+pub use process::{value_to_json, json_to_value};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -36,7 +45,29 @@ pub enum Value {
         module: String,
         signature: FnSignature,
     },
+    WasmFunction {
+        name: String,
+        module_path: String,
+        signature: FnSignature,
+    },
     Stream(Vec<Value>),
+    JavaFunction {
+        name: String,
+        class_name: String,
+        class_path: String,
+        signature: FnSignature,
+    },
+    HtmlFunction {
+        name: String,
+        signature: FnSignature,
+    },
+    ProcessFunction {
+        name: String,
+        language: String,
+        module: String,
+        bridge_path: String,
+        signature: FnSignature,
+    },
 }
 
 impl PartialEq for Value {
@@ -52,6 +83,10 @@ impl PartialEq for Value {
             (Value::NativeFunction { name: n1, .. }, Value::NativeFunction { name: n2, .. }) => n1 == n2,
             (Value::ExternFunction { name: n1, .. }, Value::ExternFunction { name: n2, .. }) => n1 == n2,
             (Value::PythonFunction { name: n1, .. }, Value::PythonFunction { name: n2, .. }) => n1 == n2,
+            (Value::WasmFunction { name: n1, .. }, Value::WasmFunction { name: n2, .. }) => n1 == n2,
+            (Value::JavaFunction { name: n1, .. }, Value::JavaFunction { name: n2, .. }) => n1 == n2,
+            (Value::HtmlFunction { name: n1, .. }, Value::HtmlFunction { name: n2, .. }) => n1 == n2,
+            (Value::ProcessFunction { name: n1, .. }, Value::ProcessFunction { name: n2, .. }) => n1 == n2,
             (Value::Stream(a), Value::Stream(b)) => a == b,
             _ => false,
         }
@@ -71,6 +106,10 @@ impl Value {
             Value::NativeFunction { .. } => "native_function",
             Value::ExternFunction { .. } => "extern_function",
             Value::PythonFunction { .. } => "python_function",
+            Value::WasmFunction { .. } => "wasm_function",
+            Value::JavaFunction { .. } => "java_function",
+            Value::HtmlFunction { .. } => "html_function",
+            Value::ProcessFunction { .. } => "process_function",
             Value::Stream(_) => "stream",
         }
     }
@@ -125,6 +164,10 @@ pub struct Environment {
 pub struct InterpContext {
     pub libs: HashMap<String, Library>,
     pub python: Option<PythonRuntime>,
+    pub wasm: Option<WasmRuntime>,
+    pub java: Option<JavaRuntime>,
+    pub html: Option<HtmlRuntime>,
+    pub process: Option<ProcessRuntime>,
 }
 
 impl InterpContext {
@@ -138,6 +181,38 @@ impl InterpContext {
             self.python = Some(PythonRuntime::new()?);
         }
         Ok(self.python.as_ref().unwrap())
+    }
+
+    /// 获取或初始化 WASM 运行时
+    pub fn wasm(&mut self) -> &mut WasmRuntime {
+        if self.wasm.is_none() {
+            self.wasm = Some(WasmRuntime::new());
+        }
+        self.wasm.as_mut().unwrap()
+    }
+
+    /// 获取或初始化 Java 运行时
+    pub fn java(&mut self) -> &mut JavaRuntime {
+        if self.java.is_none() {
+            self.java = Some(JavaRuntime::new());
+        }
+        self.java.as_mut().unwrap()
+    }
+
+    /// 获取或初始化 HTML 运行时
+    pub fn html(&mut self) -> &mut HtmlRuntime {
+        if self.html.is_none() {
+            self.html = Some(HtmlRuntime::new());
+        }
+        self.html.as_mut().unwrap()
+    }
+
+    /// 获取或初始化 Process 运行时
+    pub fn process(&mut self) -> &mut ProcessRuntime {
+        if self.process.is_none() {
+            self.process = Some(ProcessRuntime::new());
+        }
+        self.process.as_mut().unwrap()
     }
 }
 
@@ -303,6 +378,10 @@ fn value_to_string(val: &Value) -> String {
         Value::NativeFunction { name, .. } => format!("<native fn {}>", name),
         Value::ExternFunction { name, .. } => format!("<extern fn {}>", name),
         Value::PythonFunction { name, .. } => format!("<python fn {}>", name),
+        Value::WasmFunction { name, .. } => format!("<wasm fn {}>", name),
+        Value::JavaFunction { name, .. } => format!("<java fn {}>", name),
+        Value::HtmlFunction { name, .. } => format!("<html fn {}>", name),
+        Value::ProcessFunction { name, language, .. } => format!("<{} fn {}>", language, name),
         Value::Stream(items) => {
             let parts: Vec<String> = items.iter().map(value_to_string).collect();
             format!("stream[{}]", parts.join(", "))
@@ -488,7 +567,7 @@ fn cmp_values(left: &Value, right: &Value) -> Result<i32, String> {
     }
 }
 
-fn call_function(func: &Value, args: &[Value], ctx: &mut InterpContext) -> Result<Value, String> {
+pub fn call_function(func: &Value, args: &[Value], ctx: &mut InterpContext) -> Result<Value, String> {
     match func {
         Value::Function { name, params, body, closure } => {
             if args.len() != params.len() {
@@ -525,6 +604,18 @@ fn call_function(func: &Value, args: &[Value], ctx: &mut InterpContext) -> Resul
         Value::PythonFunction { name, module, signature } => {
             call_python_function(name, module, signature, args, ctx)
         }
+        Value::WasmFunction { name, module_path, signature } => {
+            call_wasm_function(name, module_path, signature, args, ctx)
+        }
+        Value::JavaFunction { name, class_name, class_path, signature } => {
+            call_java_function(name, class_name, class_path, signature, args, ctx)
+        }
+        Value::HtmlFunction { name, signature } => {
+            call_html_function(name, signature, args, ctx)
+        }
+        Value::ProcessFunction { name, language, module, bridge_path, signature } => {
+            call_process_function(name, language, module, bridge_path, signature, args, ctx)
+        }
         _ => Err(format!("Cannot call {}", func.type_name())),
     }
 }
@@ -545,7 +636,72 @@ fn call_python_function(
     py.call_module_func(module, name, args, &ret_type)
 }
 
-fn eval_extern_decl(
+fn call_wasm_function(
+    name: &str,
+    module_path: &str,
+    signature: &FnSignature,
+    args: &[Value],
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    if args.len() != signature.params.len() {
+        return Err(format!("WASM function {} expects {} args, got {}", name, signature.params.len(), args.len()));
+    }
+    let ret_type = signature.return_type.as_ref();
+    let wasm = ctx.wasm();
+    wasm.call_func(module_path, name, args, ret_type)
+}
+
+fn call_java_function(
+    name: &str,
+    class_name: &str,
+    class_path: &str,
+    signature: &FnSignature,
+    args: &[Value],
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    if args.len() != signature.params.len() {
+        return Err(format!("Java function {} expects {} args, got {}", name, signature.params.len(), args.len()));
+    }
+    let ret_type = signature.return_type.as_ref();
+    let java = ctx.java();
+    java.call_static(class_name, class_path, name, args, ret_type)
+}
+
+fn call_html_function(
+    name: &str,
+    signature: &FnSignature,
+    args: &[Value],
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    if args.len() != signature.params.len() {
+        return Err(format!("HTML function {} expects {} args, got {}", name, signature.params.len(), args.len()));
+    }
+    let ret_type = signature.return_type.as_ref();
+    let html = ctx.html();
+    html.call_func(name, args, ret_type)
+}
+
+fn call_process_function(
+    name: &str,
+    language: &str,
+    module: &str,
+    bridge_path: &str,
+    signature: &FnSignature,
+    args: &[Value],
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    if args.len() != signature.params.len() {
+        return Err(format!("{} function {} expects {} args, got {}", language, name, signature.params.len(), args.len()));
+    }
+    let ret_type = signature.return_type.as_ref();
+    let process = ctx.process();
+    if !bridge_path.is_empty() {
+        process.set_bridge(language, bridge_path);
+    }
+    process.call_func(language, module, name, args, ret_type)
+}
+
+pub fn eval_extern_decl(
     language: &str,
     module: Option<&str>,
     decls: &[FnSignature],
@@ -589,11 +745,100 @@ fn eval_extern_decl(
             }
             Ok(Value::None)
         }
+        "wasm" => {
+            let module_path = module.ok_or_else(|| {
+                "extern \"wasm\" requires a module path, e.g. extern \"wasm\" module \"path/to/file.wasm\"".to_string()
+            })?;
+            let wasm = ctx.wasm();
+            wasm.load_module(module_path, module_path)?;
+            for sig in decls {
+                let wasm_func = Value::WasmFunction {
+                    name: sig.name.clone(),
+                    module_path: module_path.to_string(),
+                    signature: sig.clone(),
+                };
+                env.set(sig.name.clone(), wasm_func);
+            }
+            Ok(Value::None)
+        }
+        "java" => {
+            // module 格式: "<class_path>::<class_name>"
+            // 例如: "build/classes::com.example.MathUtils"
+            let combined = module.ok_or_else(|| {
+                "extern \"java\" requires a module spec, e.g. extern \"java\" module \"build::com.example.Math\"".to_string()
+            })?;
+            let parts: Vec<&str> = combined.splitn(2, "::").collect();
+            let (class_path, class_name) = if parts.len() == 2 {
+                (parts[0], parts[1])
+            } else {
+                (".", combined)
+            };
+            for sig in decls {
+                let java_func = Value::JavaFunction {
+                    name: sig.name.clone(),
+                    class_name: class_name.to_string(),
+                    class_path: class_path.to_string(),
+                    signature: sig.clone(),
+                };
+                env.set(sig.name.clone(), java_func);
+            }
+            Ok(Value::None)
+        }
+        "html" | "js" => {
+            // HTML/JS FFI 通过 HTTP 调用远程端点
+            // module 是端点地址（可选，默认使用环境变量或 http://127.0.0.1:3000）
+            // 如果指定了 module，会创建一个独立的 HtmlRuntime（暂时只支持全局端点）
+            for sig in decls {
+                let html_func = Value::HtmlFunction {
+                    name: sig.name.clone(),
+                    signature: sig.clone(),
+                };
+                env.set(sig.name.clone(), html_func);
+            }
+            Ok(Value::None)
+        }
+        "go" | "rust" | "csharp" | "dotnet" | "php" | "ruby" | "swift" | "kotlin" => {
+            // 通用进程桥接:通过子进程调用其他语言的脚本/程序
+            // module 是桥接脚本路径(可选,可通过 Runtime.set_bridge() 后续设置)
+            let bridge_path = module.unwrap_or("").to_string();
+            for sig in decls {
+                let process_func = Value::ProcessFunction {
+                    name: sig.name.clone(),
+                    language: lang_lower.clone(),
+                    module: bridge_path.clone(),
+                    bridge_path: bridge_path.clone(),
+                    signature: sig.clone(),
+                };
+                env.set(sig.name.clone(), process_func);
+            }
+            Ok(Value::None)
+        }
         _ => Err(format!(
-            "Unsupported extern language: '{}' (supported: 'C', 'C++'/'cpp', 'python')",
+            "Unsupported extern language: '{}' (supported: 'C', 'C++'/'cpp', 'python', 'wasm', 'java', 'html'/'js', 'go', 'rust', 'csharp'/'dotnet', 'php', 'ruby', 'swift', 'kotlin')",
             language
         )),
     }
+}
+
+/// 从字节流加载 WASM 模块并注册函数（用于测试或内嵌 WASM）
+pub fn eval_wasm_module_from_bytes(
+    module_name: &str,
+    wasm_bytes: &[u8],
+    decls: &[FnSignature],
+    env: &mut Environment,
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    let wasm = ctx.wasm();
+    wasm.load_module_from_bytes(module_name, wasm_bytes)?;
+    for sig in decls {
+        let wasm_func = Value::WasmFunction {
+            name: sig.name.clone(),
+            module_path: module_name.to_string(),
+            signature: sig.clone(),
+        };
+        env.set(sig.name.clone(), wasm_func);
+    }
+    Ok(Value::None)
 }
 
 /// 根据 lib_key 加载本地共享库
@@ -917,6 +1162,10 @@ fn print_value(val: &Value) {
         Value::NativeFunction { name, .. } => print!("<native fn {}>", name),
         Value::ExternFunction { name, .. } => print!("<extern fn {}>", name),
         Value::PythonFunction { name, .. } => print!("<python fn {}>", name),
+        Value::WasmFunction { name, .. } => print!("<wasm fn {}>", name),
+        Value::JavaFunction { name, .. } => print!("<java fn {}>", name),
+        Value::HtmlFunction { name, .. } => print!("<html fn {}>", name),
+        Value::ProcessFunction { name, language, .. } => print!("<{} fn {}>", language, name),
         Value::Stream(items) => {
             print!("stream[");
             for (i, item) in items.iter().enumerate() {
@@ -1317,14 +1566,14 @@ mod tests {
     fn test_unsupported_extern_language() {
         // 不支持的语言应该返回错误
         let result = run(r#"
-            extern "rust" {
+            extern "erlang" {
                 fn foo() -> i32;
             }
             1
         "#);
         let err = result.unwrap_err();
         assert!(err.contains("Unsupported extern language"), "got: {}", err);
-        assert!(err.contains("rust"), "got: {}", err);
+        assert!(err.contains("erlang"), "got: {}", err);
     }
 
     #[test]

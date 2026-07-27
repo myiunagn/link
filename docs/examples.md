@@ -454,3 +454,130 @@ println("正数:", positives);   // [5, 8, 2, 4, 6]
 
 - [多语言互联概述](ffi/overview.md)
 - [设计规格](spec.md)
+
+## stream<T> 数据流
+
+### 基本用法
+
+```link
+// 从列表创建 stream
+let s = stream([1, 2, 3, 4, 5]);
+
+// map:变换每个元素
+let doubled = stream([1, 2, 3])
+    | map(fn(x) -> i64 { return x * 2; })
+    | collect();
+println(doubled);  // [2, 4, 6]
+
+// filter:过滤元素
+let evens = stream([1, 2, 3, 4, 5, 6])
+    | filter(fn(x) -> bool { return x % 2 == 0; })
+    | collect();
+println(evens);  // [2, 4, 6]
+
+// for_each:遍历元素
+stream([1, 2, 3])
+    | for_each(fn(x) { print(x, " "); });
+// 输出:1 2 3
+```
+
+### 管道链式操作
+
+```link
+// 多步管道操作
+let result = stream([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    | map(fn(x) -> i64 { return x * x; })           // 平方
+    | filter(fn(x) -> bool { return x > 50; })      // 保留大于 50 的
+    | collect();
+
+println(result);  // [64, 81, 100]
+```
+
+## 多语言 FFI 示例
+
+### WebAssembly 互连
+
+```link
+extern "wasm" module "math_utils.wasm" {
+    fn add(a: i32, b: i32) -> i32;
+    fn multiply(a: i32, b: i32) -> i32;
+}
+
+println("wasm add(3, 4) =", add(3, 4));          // 7
+println("wasm multiply(5, 6) =", multiply(5, 6)); // 30
+```
+
+### Java 互连
+
+```link
+extern "java" module "build/classes::com.example.MathUtils" {
+    fn factorial(n: i64) -> i64;
+    fn greet(name: str) -> str;
+}
+
+println("5! =", factorial(5));        // 120
+println("问候:", greet("Link"));      // Hello, Link!
+```
+
+### HTML / JS 互连
+
+```link
+extern "html" module "http://127.0.0.1:3000" {
+    fn add(a: i32, b: i32) -> i32;
+    fn render_html(content: str) -> str;
+}
+
+println("js add(10, 20) =", add(10, 20));
+println("html:", render_html("<h1>Hello</h1>"));
+```
+
+### 进程桥接互连
+
+```link
+// Go 桥接
+extern "go" module "bridge.go" {
+    fn add(a: i64, b: i64) -> i64;
+    fn greet(name: str) -> str;
+}
+
+// Ruby 桥接
+extern "ruby" module "bridge.rb" {
+    fn transform(input: i64) -> i64;
+}
+
+let go_sum = add(10, 20);
+let ruby_result = transform(go_sum);
+
+println("Go add(10, 20) =", go_sum);
+println("Ruby transform =", ruby_result);
+```
+
+### 全语言混合
+
+```link
+extern "C" { fn abs(n: i32) -> i32; }
+extern "python" module "math" { fn sqrt(x: f64) -> f64; }
+extern "C++" module "cpp_demo.dll" { fn cpp_factorial(n: i32) -> i32; }
+extern "wasm" module "mod.wasm" { fn add(a: i32, b: i32) -> i32; }
+extern "go" module "bridge.go" { fn greet(name: str) -> str; }
+
+// 混合使用 5 种语言
+let c_abs = abs(-42);
+let py_sqrt = sqrt(16.0);
+let cpp_fact = cpp_factorial(5);
+let wasm_add = add(10, 20);
+let go_greet = greet("Link");
+
+println("C abs(-42) =", c_abs);
+println("Python sqrt(16) =", py_sqrt);
+println("C++ factorial(5) =", cpp_fact);
+println("WASM add(10, 20) =", wasm_add);
+println("Go greet:", go_greet);
+
+// stream + 多语言
+let result = stream([1, 2, 3, 4, 5])
+    | map(fn(x) -> i64 { return add(x, x); })  // 调用 WASM
+    | filter(fn(x) -> bool { return x > 4; })
+    | collect();
+println("stream result:", result);  // [6, 8, 10]
+```
