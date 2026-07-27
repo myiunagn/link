@@ -64,7 +64,6 @@ extern "python" module "math" {
 // 调用 C++ 共享库 cpp_demo.dll
 extern "C++" module "cpp_demo.dll" {
     fn cpp_factorial(n: i32) -> i32;
-    fn cpp_greet(name: str) -> str;
 }
 
 // 调用 WebAssembly 模块
@@ -72,35 +71,48 @@ extern "wasm" module "module.wasm" {
     fn add(a: i32, b: i32) -> i32;
 }
 
+// 调用 Go 桥接脚本
+extern "go" module "bridge.go" {
+    fn greet(name: str) -> str;
+}
+
+// 调用 Java 静态方法
+extern "java" module "build/classes::com.example.Math" {
+    fn factorial(n: i64) -> i64;
+}
+
 let x = abs(-42);
 let y = sqrt(16.0);
 let f = cpp_factorial(5);
-let g = cpp_greet("Link");
 let w = add(3, 4);
+let g = greet("Link");
+let j = factorial(5);
 
-println("abs(-42)        =", x);
-println("math.sqrt(16.0) =", y);
-println("cpp_factorial(5) =", f);
-println("cpp_greet(\"Link\") =", g);
-println("wasm add(3, 4)  =", w);
+println("C abs(-42)           =", x);
+println("Python sqrt(16)      =", y);
+println("C++ factorial(5)     =", f);
+println("WASM add(3, 4)       =", w);
+println("Go greet(\"Link\")     =", g);
+println("Java factorial(5)    =", j);
 
 // stream<T> 数据流 + 管道运算符
 let result = stream([1, 2, 3, 4, 5])
     | map(fn(x) -> i64 { return x * 2; })
     | filter(fn(x) -> bool { return x > 5; })
     | collect();
-println("stream result   =", result);  // [6, 8, 10]
+println("stream result        =", result);  // [6, 8, 10]
 ```
 
 输出:
 
 ```
-abs(-42)        = 42
-math.sqrt(16.0) = 4
-cpp_factorial(5) = 120
-cpp_greet("Link") = Hello, Link! from C++
-wasm add(3, 4)  = 7
-stream result   = [6, 8, 10]
+C abs(-42)           = 42
+Python sqrt(16)      = 4
+C++ factorial(5)     = 120
+WASM add(3, 4)       = 7
+Go greet("Link")     = Hello, Link!
+Java factorial(5)    = 120
+stream result        = [6, 8, 10]
 ```
 
 ## 立即开始
@@ -129,7 +141,7 @@ stream result   = [6, 8, 10]
 
     ---
 
-    Link 的灵魂特性。看它如何把 C、Python、C++ 拼成一体。
+    Link 的灵魂特性。一行 `extern` 调用全球 12 种编程语言: C / C++ / Python / WASM / Java / JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin。
 
 </div>
 
