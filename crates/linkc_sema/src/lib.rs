@@ -1079,6 +1079,111 @@ pub fn const_fold(program: &Program) -> Program {
     folder.fold_program(program)
 }
 
+pub struct DeadCodeEliminator;
+
+impl DeadCodeEliminator {
+    pub fn new() -> Self {
+        DeadCodeEliminator
+    }
+
+    pub fn eliminate_program(&mut self, program: &Program) -> Program {
+        match program {
+            Program::Block(stmts) => {
+                Program::Block(self.eliminate_stmts(stmts))
+            }
+        }
+    }
+
+    fn eliminate_stmts(&mut self, stmts: &[Stmt]) -> Vec<Stmt> {
+        let mut result = Vec::new();
+        let mut unreachable = false;
+
+        for stmt in stmts {
+            if unreachable {
+                continue;
+            }
+
+            let eliminated = self.eliminate_stmt(stmt);
+            result.push(eliminated);
+
+            match stmt {
+                Stmt::Return(_) | Stmt::Break | Stmt::Continue => {
+                    unreachable = true;
+                }
+                _ => {}
+            }
+        }
+
+        result
+    }
+
+    fn eliminate_stmt(&mut self, stmt: &Stmt) -> Stmt {
+        match stmt {
+            Stmt::FnDecl { name, params, return_type, body, is_async } => {
+                Stmt::FnDecl {
+                    name: name.clone(),
+                    params: params.clone(),
+                    return_type: return_type.clone(),
+                    body: self.eliminate_block(body),
+                    is_async: *is_async,
+                }
+            }
+            Stmt::If { condition, then_branch, else_branch } => {
+                Stmt::If {
+                    condition: condition.clone(),
+                    then_branch: self.eliminate_block(then_branch),
+                    else_branch: else_branch.as_ref().map(|b| self.eliminate_block(b)),
+                }
+            }
+            Stmt::While { condition, body } => {
+                Stmt::While {
+                    condition: condition.clone(),
+                    body: self.eliminate_block(body),
+                }
+            }
+            Stmt::For { var_name, start, end, body } => {
+                Stmt::For {
+                    var_name: var_name.clone(),
+                    start: start.clone(),
+                    end: end.clone(),
+                    body: self.eliminate_block(body),
+                }
+            }
+            Stmt::Loop(body) => {
+                Stmt::Loop(self.eliminate_block(body))
+            }
+            Stmt::Match { scrutinee, arms } => {
+                let mut new_arms = Vec::new();
+                for arm in arms {
+                    new_arms.push(MatchArm {
+                        pattern: arm.pattern.clone(),
+                        body: self.eliminate_block(&arm.body),
+                    });
+                }
+                Stmt::Match {
+                    scrutinee: scrutinee.clone(),
+                    arms: new_arms,
+                }
+            }
+            Stmt::Return(Some(expr)) => {
+                Stmt::Return(Some(expr.clone()))
+            }
+            _ => stmt.clone(),
+        }
+    }
+
+    fn eliminate_block(&mut self, block: &Block) -> Block {
+        Block {
+            stmts: self.eliminate_stmts(&block.stmts),
+        }
+    }
+}
+
+pub fn eliminate_dead_code(program: &Program) -> Program {
+    let mut eliminator = DeadCodeEliminator::new();
+    eliminator.eliminate_program(program)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1408,6 +1513,73 @@ mod tests {
                 return;
             }
             panic!("expected folded list index");
+        }
+    }
+
+    mod dead_code_tests {
+        use super::*;
+
+        #[test]
+        fn test_eliminate_after_return() {
+            let program = parse("fn test() -> i64 { return 1; let x = 2; }");
+            let eliminated = eliminate_dead_code(&program);
+            let Program::Block(stmts) = &eliminated;
+            if let Stmt::FnDecl { body, .. } = &stmts[0] {
+                assert_eq!(body.stmts.len(), 1);
+                assert!(matches!(body.stmts[0], Stmt::Return(Some(Expr::Int(1)))));
+                return;
+            }
+            panic!("expected fn decl");
+        }
+
+        #[test]
+        fn test_eliminate_if_still_there() {
+            let program = parse("if true { 1 } else { 2 }");
+            let eliminated = eliminate_dead_code(&program);
+            let Program::Block(stmts) = &eliminated;
+            assert!(matches!(stmts[0], Stmt::If { .. }));
+        }
+
+        #[test]
+        fn test_eliminate_while_still_there() {
+            let program = parse("while false { println(1); }");
+            let eliminated = eliminate_dead_code(&program);
+            let Program::Block(stmts) = &eliminated;
+            assert!(matches!(stmts[0], Stmt::While { .. }));
+        }
+
+        #[test]
+        fn test_eliminate_preserves_useful_code() {
+            let program = parse("let x = 1; let y = 2; x + y");
+            let eliminated = eliminate_dead_code(&program);
+            let Program::Block(stmts) = &eliminated;
+            assert_eq!(stmts.len(), 3);
+        }
+
+        #[test]
+        fn test_eliminate_nested_blocks() {
+            let program = parse("fn test() -> i64 { if true { return 1; } let x = 2; return x; }");
+            let eliminated = eliminate_dead_code(&program);
+            let Program::Block(stmts) = &eliminated;
+            if let Stmt::FnDecl { body, .. } = &stmts[0] {
+                assert_eq!(body.stmts.len(), 3);
+                return;
+            }
+            panic!("expected fn decl");
+        }
+
+        #[test]
+        fn test_eliminate_break() {
+            let program = parse("fn test() { loop { break; let x = 1; } }");
+            let eliminated = eliminate_dead_code(&program);
+            let Program::Block(stmts) = &eliminated;
+            if let Stmt::FnDecl { body, .. } = &stmts[0] {
+                if let Stmt::Loop(loop_body) = &body.stmts[0] {
+                    assert_eq!(loop_body.stmts.len(), 1);
+                    return;
+                }
+            }
+            panic!("expected loop with 1 stmt");
         }
     }
 }

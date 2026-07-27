@@ -150,6 +150,7 @@ fn run_compile(args: &[String]) -> Result<(), String> {
     }
 
     let program = linkc_sema::const_fold(&program);
+    let program = linkc_sema::eliminate_dead_code(&program);
 
     let stem = std::path::Path::new(input_path)
         .file_stem()
