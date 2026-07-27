@@ -180,3 +180,4 @@ Link 是静态类型语言,但 v0.1 解释器对类型检查较宽松,主要在�
 
 - [运算符](operators.md)
 - [控制流](control-flow.md)
+- [复合类型: struct / enum / match](composite-types.md)

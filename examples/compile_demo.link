@@ -1,0 +1,28 @@
+fn fib(n: i64) -> i64 {
+    if n < 2 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn sum_range(start: i64, end: i64) -> i64 {
+    let s = 0;
+    for i in start..end {
+        s = s + i;
+    }
+    return s;
+}
+
+fn factorial(n: i64) -> i64 {
+    let result = 1;
+    let i = 1;
+    while i <= n {
+        result = result * i;
+        i = i + 1;
+    }
+    return result;
+}
+
+fib(10)
+sum_range(1, 101)
+factorial(10)

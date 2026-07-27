@@ -1,0 +1,10 @@
+[package]
+name = "linkc_bindgen"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+linkc_parser = { path = "../linkc_parser" }
+
+[dev-dependencies]
+linkc_lexer = { path = "../linkc_lexer" }

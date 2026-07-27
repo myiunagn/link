@@ -1,0 +1,151 @@
+// multilang_demo.link
+// Phase 1 结束标志 Demo:Link 作为多语言胶水层
+//
+// 场景:数据流水线处理
+//   - C++ 提供高性能数值计算(fibonacci / factorial / sqrt)
+//   - Python 提供数学函数与字符串处理(sqrt / pow / getcwd)
+//   - Link 编排数据流:生成数据 → C++ 计算 → Python 二次处理 → 汇总输出
+//
+// 运行:
+//   link run examples/multilang_demo.link
+//
+// 前置条件:
+//   - examples/cpp_demo.dll 已编译(参见 cpp_extern.link)
+//   - 系统已安装 Python 3 并配置 PATH
+
+// ============ 1. 外部函数声明 ============
+
+// C++ 提供的算术与递归函数
+extern "C++" module "examples/cpp_demo.dll" {
+    fn cpp_add(a: i32, b: i32) -> i32;
+    fn cpp_mul(a: i32, b: i32) -> i32;
+    fn cpp_factorial(n: i32) -> i32;
+    fn cpp_fib(n: i32) -> i32;
+    fn cpp_sqrt(x: f64) -> f64;
+    fn cpp_greet(name: str) -> str;
+    fn cpp_is_even(n: i32) -> bool;
+}
+
+// Python 提供的数学与系统函数
+extern "python" module "math" {
+    fn sqrt(x: f64) -> f64;
+    fn pow(base: f64, exp: f64) -> f64;
+    fn floor(x: f64) -> f64;
+    fn log(x: f64) -> f64;
+}
+
+extern "python" module "os" {
+    fn getcwd() -> str;
+}
+
+// ============ 2. 辅助函数(Link 原生,先定义) ============
+
+fn sum_list(nums: list) -> i32 {
+    let total = 0;
+    let i = 0;
+    while i < len(nums) {
+        total = total + nums[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+// ============ 3. Link 层编排函数 ============
+
+// 用 C++ 计算斐波那契数列前 n 项
+fn fib_sequence(n: i32) -> list {
+    let result = [];
+    let i = 0;
+    while i < n {
+        let fib_val = cpp_fib(i);
+        result = result + [fib_val];
+        i = i + 1;
+    }
+    return result;
+}
+
+// 用 C++ 与 Python 协同:对 fib 数列求和后开方
+fn sqrt_of_sum(nums: list) -> f64 {
+    let total = sum_list(nums);
+    let sq = sqrt(total * 1.0);
+    return sq;
+}
+
+// 链接 C++ 的两个函数
+fn combined_compute(a: i32, b: i32) -> i32 {
+    return cpp_mul(cpp_add(a, b), cpp_factorial(3));
+}
+
+// 异步任务(模拟并行调度)
+async fn fetch_env_info() -> str {
+    sleep(20);
+    return getcwd();
+}
+
+// ============ 4. 主流程 ============
+
+println("=== Link 多语言 Demo ===");
+println("");
+
+// Step 1: 环境信息(异步获取)
+let env = await fetch_env_info();
+println("Working directory:", env);
+
+// Step 2: C++ 计算
+println("");
+println("--- C++ FFI ---");
+let fib10 = cpp_fib(10);
+let fact5 = cpp_factorial(5);
+let greeting = cpp_greet("Link");
+println("cpp_fib(10) =", fib10);
+println("cpp_factorial(5) =", fact5);
+println("cpp_greet(\"Link\") =", greeting);
+
+// Step 3: Python 计算
+println("");
+println("--- Python FFI ---");
+let sqrt144 = sqrt(144.0);
+let pow_2_10 = pow(2.0, 10.0);
+let log_e = log(2.71828);
+println("math.sqrt(144.0) =", sqrt144);
+println("math.pow(2.0, 10.0) =", pow_2_10);
+println("math.log(2.71828) =", log_e);
+
+// Step 4: Link 编排:数据流水线
+println("");
+println("--- Link 编排 ---");
+let fibs = fib_sequence(8);
+println("fib_sequence(8) =", fibs);
+
+let fib_sum = sum_list(fibs);
+println("sum of fibs =", fib_sum);
+
+let sq = sqrt_of_sum(fibs);
+println("sqrt(sum_of_fibs) =", sq);
+
+// Step 5: 多语言协同(混合调用)
+println("");
+println("--- 协同调用 ---");
+let combo = combined_compute(3, 4);
+println("cpp_mul(cpp_add(3,4), cpp_factorial(3)) =", combo);
+
+// C++ sqrt 与 Python sqrt 对比
+let cpp_sq = cpp_sqrt(144.0);
+let py_sq = sqrt(144.0);
+println("C++ sqrt(144) =", cpp_sq);
+println("Py  sqrt(144) =", py_sq);
+
+// Step 6: 流式管道处理
+println("");
+println("--- Stream 流式处理 ---");
+fn is_even_native(x: i32) -> bool { return x % 2 == 0; }
+fn double_native(x: i32) -> i32 { return x * 2; }
+
+flow EvenDoubled "过滤偶数并翻倍" {
+    source: stream([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    pipeline:
+        source | filter(is_even_native) | map(double_native) | collect;
+}
+
+println("");
+println("=== Demo 完成 ===");

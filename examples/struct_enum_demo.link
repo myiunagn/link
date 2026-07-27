@@ -1,0 +1,71 @@
+// struct/enum 复合类型演示
+
+// 1. 定义结构体
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+// 2. 定义枚举（带和不带参数的变体）
+enum Shape {
+    Circle(f64),
+    Rect(Point, Point),
+    Empty,
+}
+
+// 3. 使用 struct 实例化和字段访问
+let origin = Point { x: 0, y: 0 };
+let p1 = Point { x: 10, y: 20 };
+println("origin = ");
+println(origin);
+println("p1.x = ");
+println(p1.x);
+println("p1.y = ");
+println(p1.y);
+
+// 4. struct 作为函数返回值
+fn make_point(a: i32, b: i32) -> Point {
+    return Point { x: a, y: b };
+}
+let p2 = make_point(5, 6);
+println("p2 = ");
+println(p2);
+println("p2.x + p2.y = ");
+println(p2.x + p2.y);
+
+// 5. enum 变体构造
+let unit = Shape::Empty;
+let circ = Shape::Circle(3.14);
+let rect = Shape::Rect(origin, p1);
+println("unit = ");
+println(unit);
+println("circ = ");
+println(circ);
+println("rect = ");
+println(rect);
+
+// 6. match 模式匹配
+fn describe(s: Shape) -> i32 {
+    match s {
+        Shape::Empty => { 0 }
+        Shape::Circle(r) => { 1 }
+        Shape::Rect(a, b) => { b.x + b.y }
+    }
+}
+
+println("describe(unit) = ");
+println(describe(unit));
+println("describe(circ) = ");
+println(describe(circ));
+println("describe(rect) = ");
+println(describe(rect));
+
+// 7. 字面量模式匹配
+let n = 5;
+let label = match n {
+    1 => { 100 }
+    5 => { 200 }
+    _ => { 999 }
+};
+println("label = ");
+println(label);

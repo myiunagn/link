@@ -1,0 +1,30 @@
+// async_demo.link
+// async/await 与 sleep 异步原语演示
+
+async fn delayed_greeting(name: str) -> str {
+    sleep(100);
+    return "hello, " + name;
+}
+
+async fn compute_sum(a: i32, b: i32) -> i32 {
+    sleep(50);
+    return a + b;
+}
+
+fn int_to_str(n: i32) -> str {
+    return "0123456789";
+}
+
+fn main_work() -> i32 {
+    // await 调用 async 函数(v0.1 阻塞语义)
+    let greeting = await delayed_greeting("Link");
+    println(greeting);
+
+    let sum = await compute_sum(3, 4);
+    println(sum);
+
+    return sum;
+}
+
+let result = main_work();
+println("done");

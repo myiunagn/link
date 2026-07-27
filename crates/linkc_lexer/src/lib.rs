@@ -11,14 +11,14 @@ pub enum Token {
     Fn, Let, Return, If, Else, Match, For, While, Loop, In,
     True, False, None, Some, Ok, Err, As,
     Break, Continue,
-    Extern, Export, Async, Struct, Enum, Impl, Trait, Use, Mod, Pub,
-    Stream,
+    Extern, Export, Async, Await, Struct, Enum, Impl, Trait, Use, Mod, Pub,
+    Stream, Flow, Pipeline, Source, Sample,
 
     // 运算符
     Plus, Minus, Star, Slash, Percent,
     Assign, Eq, NotEq, Lt, Gt, LtEq, GtEq,
     And, Or, Not, Ampersand, Pipe, Arrow, FatArrow,
-    Dot, Colon, Semicolon, Comma, Underscore,
+    Dot, Colon, DoubleColon, Semicolon, Comma, Underscore,
 
     // 分隔符
     LeftParen, RightParen, LeftBrace, RightBrace, LeftBracket, RightBracket,
@@ -57,6 +57,7 @@ impl std::fmt::Display for Token {
             Token::Extern => write!(f, "extern"),
             Token::Export => write!(f, "export"),
             Token::Async => write!(f, "async"),
+            Token::Await => write!(f, "await"),
             Token::Struct => write!(f, "struct"),
             Token::Enum => write!(f, "enum"),
             Token::Impl => write!(f, "impl"),
@@ -65,6 +66,10 @@ impl std::fmt::Display for Token {
             Token::Mod => write!(f, "mod"),
             Token::Pub => write!(f, "pub"),
             Token::Stream => write!(f, "stream"),
+            Token::Flow => write!(f, "flow"),
+            Token::Pipeline => write!(f, "pipeline"),
+            Token::Source => write!(f, "source"),
+            Token::Sample => write!(f, "sample"),
             Token::Plus => write!(f, "+"),
             Token::Minus => write!(f, "-"),
             Token::Star => write!(f, "*"),
@@ -86,6 +91,7 @@ impl std::fmt::Display for Token {
             Token::FatArrow => write!(f, "=>"),
             Token::Dot => write!(f, "."),
             Token::Colon => write!(f, ":"),
+            Token::DoubleColon => write!(f, "::"),
             Token::Semicolon => write!(f, ";"),
             Token::Comma => write!(f, ","),
             Token::Underscore => write!(f, "_"),
@@ -214,7 +220,14 @@ impl Lexer {
             ']' => Token::RightBracket,
             ';' => Token::Semicolon,
             ',' => Token::Comma,
-            ':' => Token::Colon,
+            ':' => {
+                if self.peek() == Some(':') {
+                    self.advance();
+                    Token::DoubleColon
+                } else {
+                    Token::Colon
+                }
+            }
             '.' => Token::Dot,
             '_' => {
                 if self.peek().map(|c| c.is_alphanumeric()).unwrap_or(false) {
@@ -306,6 +319,7 @@ impl Lexer {
             "extern" => Token::Extern,
             "export" => Token::Export,
             "async" => Token::Async,
+            "await" => Token::Await,
             "struct" => Token::Struct,
             "enum" => Token::Enum,
             "impl" => Token::Impl,
@@ -314,6 +328,10 @@ impl Lexer {
             "mod" => Token::Mod,
             "pub" => Token::Pub,
             "stream" => Token::Stream,
+            "flow" => Token::Flow,
+            "pipeline" => Token::Pipeline,
+            "source" => Token::Source,
+            "sample" => Token::Sample,
             _ => Token::Ident(ident),
         }
     }
@@ -433,5 +451,22 @@ mod tests {
         let tokens = lex("stream stream_of_ints");
         assert_eq!(tokens[0].token, Token::Stream);
         assert_eq!(tokens[1].token, Token::Ident("stream_of_ints".to_string()));
+    }
+
+    #[test]
+    fn test_lex_flow_keywords() {
+        let tokens = lex("flow pipeline source sample");
+        assert_eq!(tokens[0].token, Token::Flow);
+        assert_eq!(tokens[1].token, Token::Pipeline);
+        assert_eq!(tokens[2].token, Token::Source);
+        assert_eq!(tokens[3].token, Token::Sample);
+    }
+
+    #[test]
+    fn test_lex_async_await_keywords() {
+        let tokens = lex("async fn await");
+        assert_eq!(tokens[0].token, Token::Async);
+        assert_eq!(tokens[1].token, Token::Fn);
+        assert_eq!(tokens[2].token, Token::Await);
     }
 }

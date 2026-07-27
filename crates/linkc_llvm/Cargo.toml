@@ -1,0 +1,12 @@
+[package]
+name = "linkc_llvm"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+linkc_parser = { path = "../linkc_parser" }
+inkwell = { version = "0.5", optional = true }
+
+[features]
+default = []
+llvm-backend = ["dep:inkwell"]

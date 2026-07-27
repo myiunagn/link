@@ -57,6 +57,9 @@ nav:
       - 控制流: basics/control-flow.md
       - 函数: basics/functions.md
       - 列表与字符串: basics/collections.md
+      - 复合类型: basics/composite-types.md
+      - flow 声明块: basics/flow.md
+      - 异步编程: basics/async.md
   - 多语言互联:
       - 概述: ffi/overview.md
       - C 互连: ffi/c.md
@@ -66,6 +69,7 @@ nav:
       - Java 互连: ffi/java.md
       - HTML/JS 互连: ffi/html.md
       - 进程桥接互连: ffi/process.md
+      - 绑定生成器: ffi/bindgen.md
   - 示例: examples.md
   - 设计规格: spec.md
 

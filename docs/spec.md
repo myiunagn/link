@@ -2,7 +2,7 @@
 
 > **版本**: v0.1 (MVP 设计稿)
 > **日期**: 2026-07-26
-> **状态**: 设计阶段
+> **状态**: 设计阶段(Phase 1 开发中)
 
 ---
 
@@ -748,6 +748,85 @@ fn main() {
 | 文档 | 快速开始 + 互操作指南 |
 
 **结束标志**:一个完整的多语言混合应用 demo,Link 作为数据胶水层连接 Python 和 TS,性能优于纯 Python。
+
+#### 5.5.1 Phase 1 实施进度
+
+按子阶段拆分的实际推进情况:
+
+| 子阶段 | 内容 | 状态 |
+|--------|------|------|
+| Phase 1.1 | C FFI 基础(`extern "C"` / `export "C"` + libloading 动态加载) | ✅ 完成 |
+| Phase 1.2 | Python + C++ FFI(libpython 动态加载 + `extern "C"` ABI) | ✅ 完成 |
+| Phase 1.3 | `stream<T>` 核心类型 + 管道运算符 `\|`(stream/map/filter/for_each/collect) | ✅ 完成 |
+| Phase 1.4 | 多语言 FFI 扩展(WASM / Java / HTML-JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin,共 12 种语言) | ✅ 完成 |
+| Phase 1.5 | struct / enum 复合类型 + match 模式匹配(含 `::` 路径、payload 解构、字面量模式) | ✅ 完成 |
+| Phase 1.6 | `export "<lang>"` 绑定生成器(C 头文件 / Python .pyi / TypeScript .d.ts) | ✅ 完成 |
+| Phase 1.7 | `flow` 声明块 + 自动调度(source / sample / pipeline 字段,串行执行) | ✅ 完成 |
+| Phase 1.8 | 异步运行时(async/await/sleep 语法)+ 多语言 Demo 项目 | ✅ 完成 |
+
+**Phase 1.5 实现要点**:
+
+- Lexer 新增 `::` (`DoubleColon`) token 以支持 `Type::Variant` 路径语法
+- Parser 扩展 AST:`StructDecl` / `EnumDecl` / `Match`(语句)与 `FieldAccess` / `Path` / `StructInit` / `PathCall` / `MatchExpr`(表达式)
+- Interpreter 新增 `Value::StructInstance` / `Value::EnumValue`,`InterpContext` 新增 `struct_defs` / `enum_defs` 注册表
+- `match` 既可作语句也可作表达式;支持通配符、绑定、字面量、枚举变体、带参数变体解构 5 种 Pattern
+- return 机制改用 `InterpContext.return_value` 直接传递 `Value`,避免序列化复杂类型
+
+**Phase 1.6 实现要点**:
+
+- 新增 `linkc_bindgen` crate,定义 `Generator` trait + `TargetLang` 枚举 + `collect_exports` / `generate` 入口
+- 实现三个后端:`CGenerator`(.h,含 include guard / `extern "C"` / `<stdint.h>`)、`PythonGenerator`(.pyi,含 `AsyncIterable` / `async def`)、`TypeScriptGenerator`(.d.ts,含 `declare module` / `Promise<T>`)
+- 共享 `TypeMapper` trait 统一处理类型映射(整数 → `int32_t` / `int` / `number` 等),`stream<T>` 在 Python/TS 中映射为 `AsyncIterable`
+- 多 export 块自动合并;按 `--lang` 过滤目标语言块;关键字冲突标识符自动加下划线后缀
+- CLI 新增 `link bindgen --lang <lang> <input.link> [-o <output>] [--module <name>]` 子命令,默认模块名从输入文件名推导
+- 20 个测试通过(11 单测 + 9 集成),涵盖三种语言生成、合并、过滤、指针类型、async 处理
+
+**Phase 1.7 实现要点**:
+
+- Lexer 新增 `Flow` / `Pipeline` / `Source` / `Sample` 4 个关键字
+- Parser 新增 `Stmt::FlowDecl { name, description, source, pipeline }` AST 节点与 `parse_flow_decl` 函数,支持 `source:` / `sample:` / `pipeline:` 三个字段
+- `sample:` 字段当前仅解析不执行(跳过到分号),时间调度留待 Phase 1.8
+- `source` 关键字在表达式上下文中回退为 `Ident("source")` 变量,允许 pipeline 引用 flow 块内的 source 绑定
+- Interpreter 实现 `eval_flow` 函数:为 flow 创建独立子作用域(避免 source 变量泄露),求值 source 表达式并绑定,然后求值 pipeline 表达式
+- v0.1 树漫游解释器无真正并发,"自动调度"等价于"立即串行执行";多个 flow 按源码出现顺序执行,返回最后一个的值
+- 修复 `+` 运算符不支持 `str + str` 字符串拼接的 bug(此前会尝试转 float 报错)
+- 14 个新测试通过(8 interpreter + 4 parser + 1 lexer + 1 字符串拼接),总 176 测试全绿
+
+**Phase 1.8 实现要点**:
+
+- Lexer 新增 `Await` 关键字(`async` 此前已存在但仅用于 export 块)
+- Parser 扩展 `Stmt::FnDecl` 添加 `is_async` 字段,`parse_fn_decl` 支持 `async fn` 前缀;`parse_stmt` 将 `Token::Async` 路由到 `parse_fn_decl`
+- 新增 `Expr::Await(Box<Expr>)` AST 节点,`parse_unary` 支持 `await <expr>` 前缀运算符(优先级同 `!` / `-`)
+- Interpreter 实现 `Expr::Await` 求值:v0.1 阻塞语义,直接求值内部表达式;真正并发调度留待 v0.2 LLVM 后端
+- 新增 `sleep(ms)` 内置函数作为异步原语,用 `std::thread::sleep` 阻塞当前线程
+- 修复 `+` 运算符不支持 `list + list` 拼接的 bug(此前走 else 分支尝试转 float 报错)
+- 构建 [multilang_demo.link](https://github.com/myiunagn/link/blob/main/examples/multilang_demo.link) 端到端 Demo:Link 编排 + C++ 计算(fib/factorial/sqrt)+ Python 数据处理(math/os)+ async/await + flow 流式处理
+- 8 个新测试通过(5 interpreter + 2 parser + 1 lexer),总 174 测试全绿
+
+---
+
+### 🎉 Phase 1 完成总结
+
+**Phase 1 全部 8 个子阶段已完成**,Link v0.1 MVP 实现了:
+
+| 能力 | 说明 |
+|------|------|
+| 基本类型 | int / float / str / bool / none / list |
+| 控制流 | if/else / while / for / loop / break / continue |
+| 函数 | 声明 / 递归 / 闭包 / **async fn** |
+| 复合类型 | struct / enum / **match 模式匹配**(5 种 Pattern) |
+| stream<T> | stream / map / filter / for_each / collect + 管道运算符 `\|` |
+| flow 块 | 声明式数据流(source / sample / pipeline) |
+| async / await | 语法完整(v0.1 阻塞语义,v0.2 真正并发) |
+| 多语言 FFI | **12 种语言**:C / C++ / Python / WASM / Java / HTML-JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin |
+| 绑定生成 | `link bindgen` 生成 C 头文件 / Python .pyi / TypeScript .d.ts |
+| CLI | `link run` / `link repl` / `link bindgen` |
+
+**测试覆盖**:174 个单元/集成测试全部通过
+
+**Demo 验证**:[multilang_demo.link](https://github.com/myiunagn/link/blob/main/examples/multilang_demo.link) 展示 Link 作为多语言胶水层的完整价值
+
+**下一步**:Phase 2(LLVM 编译后端 + 游戏后端域类型),见 5.6 节
 
 ### 5.6 Phase 2:编译期 + 游戏后端(约 12 周)
 

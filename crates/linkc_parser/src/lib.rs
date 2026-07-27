@@ -14,12 +14,49 @@ pub struct FnSignature {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: String,
+    pub type_ann: TypeAnnotation,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariantDecl {
+    pub name: String,
+    pub payload: Vec<TypeAnnotation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Block,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// 通配符 `_`
+    Wildcard,
+    /// 字面量: int/float/str/bool/none
+    Literal(Expr),
+    /// 绑定变量: `name`
+    Bind(String),
+    /// 枚举变体无参数: `Color::Red`
+    EnumVariant { type_name: String, variant: String },
+    /// 枚举变体带参数: `Color::RGB(r, g, b)`
+    EnumVariantWithPayload {
+        type_name: String,
+        variant: String,
+        bindings: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     FnDecl {
         name: String,
         params: Vec<(String, TypeAnnotation)>,
         return_type: Option<TypeAnnotation>,
         body: Block,
+        is_async: bool,
     },
     LetDecl {
         name: String,
@@ -60,6 +97,26 @@ pub enum Stmt {
         module: Option<String>,
         decls: Vec<FnSignature>,
     },
+    StructDecl {
+        name: String,
+        fields: Vec<StructField>,
+    },
+    EnumDecl {
+        name: String,
+        variants: Vec<EnumVariantDecl>,
+    },
+    Match {
+        scrutinee: Expr,
+        arms: Vec<MatchArm>,
+    },
+    /// flow 声明块:声明式数据流定义
+    /// `flow Name "description" { source: <expr>; pipeline: <expr>; }`
+    FlowDecl {
+        name: String,
+        description: Option<String>,
+        source: Option<Expr>,
+        pipeline: Expr,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +156,35 @@ pub enum Expr {
         else_value: Box<Expr>,
     },
     BlockExpr(Block),
+    /// 字段访问: `expr.field`
+    FieldAccess {
+        target: Box<Expr>,
+        field: String,
+    },
+    /// 路径表达式: `Type::name`，用于枚举变体如 `Color::Red`
+    Path {
+        base: String,
+        segment: String,
+    },
+    /// 结构体初始化: `Name { field: value, ... }`
+    StructInit {
+        name: String,
+        fields: Vec<(String, Expr)>,
+    },
+    /// 路径调用: `Type::name(args)`，用于枚举变体带参数如 `Color::RGB(1,2,3)`
+    PathCall {
+        base: String,
+        segment: String,
+        args: Vec<Expr>,
+    },
+    /// match 表达式（可作为表达式使用）
+    MatchExpr {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    /// await 表达式: `await <expr>`
+    /// v0.1 树漫游解释器中等价于直接求值(阻塞语义)
+    Await(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -167,6 +253,28 @@ impl std::fmt::Display for Expr {
                 write!(f, "if {} {} else {}", condition, then_value, else_value)
             }
             Expr::BlockExpr(_) => write!(f, "{{ ... }}"),
+            Expr::FieldAccess { target, field } => write!(f, "{}.{}", target, field),
+            Expr::Path { base, segment } => write!(f, "{}::{}", base, segment),
+            Expr::StructInit { name, fields } => {
+                write!(f, "{} {{ ", name)?;
+                for (i, (fname, fval)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}: {}", fname, fval)?;
+                }
+                write!(f, " }}")
+            }
+            Expr::PathCall { base, segment, args } => {
+                write!(f, "{}::{}(", base, segment)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, ")")
+            }
+            Expr::MatchExpr { scrutinee, arms } => {
+                write!(f, "match {} {{ ... }} ({} arms)", scrutinee, arms.len())
+            }
+            Expr::Await(inner) => write!(f, "await {}", inner),
         }
     }
 }
@@ -234,6 +342,7 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Result<Stmt, String> {
         match self.current_token().clone() {
+            Token::Async => self.parse_fn_decl(),
             Token::Fn => self.parse_fn_decl(),
             Token::Let => self.parse_let_decl(),
             Token::Return => self.parse_return(),
@@ -245,6 +354,10 @@ impl Parser {
             Token::Continue => { self.advance(); Ok(Stmt::Continue) }
             Token::Extern => self.parse_extern_decl(),
             Token::Export => self.parse_export_decl(),
+            Token::Struct => self.parse_struct_decl(),
+            Token::Enum => self.parse_enum_decl(),
+            Token::Match => self.parse_match_stmt(),
+            Token::Flow => self.parse_flow_decl(),
             Token::LeftBrace => {
                 let block = self.parse_block()?;
                 Ok(Stmt::Expr(Expr::BlockExpr(block)))
@@ -440,6 +553,11 @@ impl Parser {
             let op = self.parse_unary()?;
             return Ok(Expr::Unary { op: UnaryOp::Not, operand: Box::new(op) });
         }
+        // await <expr> —— 前缀运算符,优先级与一元运算符相同
+        if self.eat(Token::Await) {
+            let inner = self.parse_unary()?;
+            return Ok(Expr::Await(Box::new(inner)));
+        }
         self.parse_call()
     }
 
@@ -447,7 +565,8 @@ impl Parser {
         let mut expr = self.parse_primary()?;
         loop {
             if self.check(Token::LeftParen) {
-                if let Expr::Ident(name) = expr {
+                if let Expr::Ident(name) = &expr {
+                    let name = name.clone();
                     self.advance();
                     let mut args = Vec::new();
                     if !self.check(Token::RightParen) {
@@ -466,6 +585,19 @@ impl Parser {
                 let index = self.parse_expr()?;
                 self.expect(Token::RightBracket)?;
                 expr = Expr::Index { target: Box::new(expr), index: Box::new(index) };
+            } else if self.check(Token::Dot) {
+                // 检查是否是范围操作符 `..`，如果是则不在这里处理字段访问
+                let next_is_dot = self.tokens.get(self.pos + 1)
+                    .map_or(false, |t| t.token == Token::Dot);
+                if next_is_dot {
+                    break;
+                }
+                self.advance();
+                let field = match self.current_token().clone() {
+                    Token::Ident(s) => { self.advance(); s }
+                    other => return Err(format!("Expected field name after '.', found {}", other)),
+                };
+                expr = Expr::FieldAccess { target: Box::new(expr), field };
             } else {
                 break;
             }
@@ -481,8 +613,72 @@ impl Parser {
             Token::Str(s) => { self.advance(); Ok(Expr::Str(s)) }
             Token::Bool(b) => { self.advance(); Ok(Expr::Bool(b)) }
             Token::None => { self.advance(); Ok(Expr::None) }
-            Token::Ident(name) => { self.advance(); Ok(Expr::Ident(name)) }
+            // `source` 在 flow 块内是字段关键字,但在表达式中作为变量名使用
+            Token::Source => { self.advance(); Ok(Expr::Ident("source".to_string())) }
+            Token::Ident(name) => {
+                self.advance();
+                // 路径: Type::Variant 或 Type::Variant(args)
+                if self.check(Token::DoubleColon) {
+                    self.advance();
+                    let segment = match self.current_token().clone() {
+                        Token::Ident(s) => { self.advance(); s }
+                        other => return Err(format!("Expected identifier after '::', found {}", other)),
+                    };
+                    // 如果紧跟 `(`，则是带参数的枚举变体调用
+                    if self.check(Token::LeftParen) {
+                        self.advance();
+                        let mut args = Vec::new();
+                        if !self.check(Token::RightParen) {
+                            args.push(self.parse_expr()?);
+                            while self.eat(Token::Comma) {
+                                args.push(self.parse_expr()?);
+                            }
+                        }
+                        self.expect(Token::RightParen)?;
+                        Ok(Expr::PathCall { base: name, segment, args })
+                    } else {
+                        Ok(Expr::Path { base: name, segment })
+                    }
+                } else if self.check(Token::LeftBrace) {
+                    // 仅当符合 `Name { field: ... }` 或 `Name {}` 模式时才识别为 struct init
+                    // 避免与块表达式冲突，例如 `match c { ... }` 中的 `c {`
+                    let is_struct_init = {
+                        let next = self.tokens.get(self.pos + 1).map(|t| &t.token);
+                        match next {
+                            Some(Token::RightBrace) => true,
+                            Some(Token::Ident(_)) => {
+                                let after = self.tokens.get(self.pos + 2).map(|t| &t.token);
+                                matches!(after, Some(Token::Colon))
+                            }
+                            _ => false,
+                        }
+                    };
+                    if is_struct_init {
+                        self.advance();
+                        let mut fields = Vec::new();
+                        if !self.check(Token::RightBrace) {
+                            loop {
+                                let field_name = match self.current_token().clone() {
+                                    Token::Ident(s) => { self.advance(); s }
+                                    other => return Err(format!("Expected field name, found {}", other)),
+                                };
+                                self.expect(Token::Colon)?;
+                                let field_val = self.parse_expr()?;
+                                fields.push((field_name, field_val));
+                                if !self.eat(Token::Comma) { break; }
+                            }
+                        }
+                        self.expect(Token::RightBrace)?;
+                        Ok(Expr::StructInit { name, fields })
+                    } else {
+                        Ok(Expr::Ident(name))
+                    }
+                } else {
+                    Ok(Expr::Ident(name))
+                }
+            }
             Token::Stream => { self.advance(); Ok(Expr::Ident("stream".to_string())) }
+            Token::Match => self.parse_match_expr(),
             Token::LeftParen => {
                 self.advance();
                 let expr = self.parse_expr()?;
@@ -511,6 +707,8 @@ impl Parser {
     }
 
     fn parse_fn_decl(&mut self) -> Result<Stmt, String> {
+        // 可选 async 前缀
+        let is_async = self.eat(Token::Async);
         self.expect(Token::Fn)?;
         let name = if let Token::Ident(ref s) = self.current_token() {
             s.clone()
@@ -537,7 +735,7 @@ impl Parser {
             Some(self.parse_type_annotation()?)
         } else { None };
         let body = self.parse_block()?;
-        Ok(Stmt::FnDecl { name, params, return_type, body })
+        Ok(Stmt::FnDecl { name, params, return_type, body, is_async })
     }
 
     fn parse_let_decl(&mut self) -> Result<Stmt, String> {
@@ -621,6 +819,213 @@ impl Parser {
         }
         self.expect(Token::RightBrace)?;
         Ok(Block { stmts })
+    }
+
+    /// 解析结构体声明: `struct Name { field: T, ... }`
+    fn parse_struct_decl(&mut self) -> Result<Stmt, String> {
+        self.expect(Token::Struct)?;
+        let name = match self.current_token().clone() {
+            Token::Ident(s) => { self.advance(); s }
+            other => return Err(format!("Expected struct name, found {}", other)),
+        };
+        self.expect(Token::LeftBrace)?;
+        let mut fields = Vec::new();
+        while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+            let field_name = match self.current_token().clone() {
+                Token::Ident(s) => { self.advance(); s }
+                other => return Err(format!("Expected field name, found {}", other)),
+            };
+            self.expect(Token::Colon)?;
+            let type_ann = self.parse_type_annotation()?;
+            fields.push(StructField { name: field_name, type_ann });
+            if !self.eat(Token::Comma) { break; }
+        }
+        self.expect(Token::RightBrace)?;
+        Ok(Stmt::StructDecl { name, fields })
+    }
+
+    /// 解析枚举声明: `enum Name { Variant, Variant2(T, T), ... }`
+    fn parse_enum_decl(&mut self) -> Result<Stmt, String> {
+        self.expect(Token::Enum)?;
+        let name = match self.current_token().clone() {
+            Token::Ident(s) => { self.advance(); s }
+            other => return Err(format!("Expected enum name, found {}", other)),
+        };
+        self.expect(Token::LeftBrace)?;
+        let mut variants = Vec::new();
+        while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+            let variant_name = match self.current_token().clone() {
+                Token::Ident(s) => { self.advance(); s }
+                other => return Err(format!("Expected variant name, found {}", other)),
+            };
+            // 可选的载荷类型列表: (T, T, ...)
+            let payload = if self.check(Token::LeftParen) {
+                self.advance();
+                let mut types = Vec::new();
+                if !self.check(Token::RightParen) {
+                    types.push(self.parse_type_annotation()?);
+                    while self.eat(Token::Comma) {
+                        types.push(self.parse_type_annotation()?);
+                    }
+                }
+                self.expect(Token::RightParen)?;
+                types
+            } else {
+                Vec::new()
+            };
+            variants.push(EnumVariantDecl { name: variant_name, payload });
+            if !self.eat(Token::Comma) { break; }
+        }
+        self.expect(Token::RightBrace)?;
+        Ok(Stmt::EnumDecl { name, variants })
+    }
+
+    /// 解析 match 语句: `match scrutinee { pattern => body, ... }`
+    fn parse_match_stmt(&mut self) -> Result<Stmt, String> {
+        let expr = self.parse_match_expr()?;
+        if let Expr::MatchExpr { scrutinee, arms } = expr {
+            Ok(Stmt::Match { scrutinee: *scrutinee, arms })
+        } else {
+            unreachable!("parse_match_expr should return MatchExpr")
+        }
+    }
+
+    /// 解析 flow 声明块
+    ///
+    /// 语法:
+    /// ```text
+    /// flow Name "description" {
+    ///     source: <expr>;
+    ///     sample: every 1s;     // 解析但当前忽略(v0.1 无异步调度)
+    ///     pipeline:
+    ///         <expr>;
+    /// }
+    /// ```
+    /// `description` 与 `source` / `sample` 字段都是可选的;`pipeline:` 必须存在。
+    fn parse_flow_decl(&mut self) -> Result<Stmt, String> {
+        self.expect(Token::Flow)?;
+        let name = match self.current_token().clone() {
+            Token::Ident(s) => { self.advance(); s }
+            other => return Err(format!("Expected flow name, found {}", other)),
+        };
+        // 可选描述字符串
+        let description = if let Token::Str(_) = self.current_token() {
+            match self.current_token().clone() {
+                Token::Str(s) => { self.advance(); Some(s) }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        self.expect(Token::LeftBrace)?;
+
+        let mut source: Option<Expr> = None;
+        let mut pipeline: Option<Expr> = None;
+
+        while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+            match self.current_token().clone() {
+                Token::Source => {
+                    self.advance();
+                    self.expect(Token::Colon)?;
+                    let expr = self.parse_expr()?;
+                    self.eat(Token::Semicolon);
+                    source = Some(expr);
+                }
+                Token::Sample => {
+                    // v0.1 暂不实现时间调度,跳过整个 sample 字段
+                    self.advance();
+                    self.expect(Token::Colon)?;
+                    // 跳过到下一个分号
+                    while !self.check(Token::Semicolon) && !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                        self.advance();
+                    }
+                    self.eat(Token::Semicolon);
+                }
+                Token::Pipeline => {
+                    self.advance();
+                    self.expect(Token::Colon)?;
+                    let expr = self.parse_expr()?;
+                    self.eat(Token::Semicolon);
+                    pipeline = Some(expr);
+                }
+                other => return Err(format!("Expected 'source' / 'sample' / 'pipeline' in flow block, found {}", other)),
+            }
+        }
+        self.expect(Token::RightBrace)?;
+
+        let pipeline = pipeline.ok_or_else(|| format!("flow {} missing 'pipeline:' section", name))?;
+        Ok(Stmt::FlowDecl { name, description, source, pipeline })
+    }
+
+    /// 解析 match 表达式
+    fn parse_match_expr(&mut self) -> Result<Expr, String> {
+        self.expect(Token::Match)?;
+        let scrutinee = self.parse_expr()?;
+        self.expect(Token::LeftBrace)?;
+        let mut arms = Vec::new();
+        while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+            let pattern = self.parse_pattern()?;
+            self.expect(Token::FatArrow)?;
+            let body = self.parse_block()?;
+            arms.push(MatchArm { pattern, body });
+            self.eat(Token::Comma);
+        }
+        self.expect(Token::RightBrace)?;
+        Ok(Expr::MatchExpr { scrutinee: Box::new(scrutinee), arms })
+    }
+
+    /// 解析单个模式
+    fn parse_pattern(&mut self) -> Result<Pattern, String> {
+        let token = self.current_token().clone();
+        match token {
+            Token::Underscore => {
+                self.advance();
+                Ok(Pattern::Wildcard)
+            }
+            Token::Int(n) => { self.advance(); Ok(Pattern::Literal(Expr::Int(n))) }
+            Token::Float(n) => { self.advance(); Ok(Pattern::Literal(Expr::Float(n))) }
+            Token::Str(s) => { self.advance(); Ok(Pattern::Literal(Expr::Str(s))) }
+            Token::Bool(b) => { self.advance(); Ok(Pattern::Literal(Expr::Bool(b))) }
+            Token::None => { self.advance(); Ok(Pattern::Literal(Expr::None)) }
+            Token::Ident(name) => {
+                self.advance();
+                // 检查是否是路径: Type::Variant
+                if self.check(Token::DoubleColon) {
+                    self.advance();
+                    let variant = match self.current_token().clone() {
+                        Token::Ident(s) => { self.advance(); s }
+                        other => return Err(format!("Expected variant name after '::', found {}", other)),
+                    };
+                    // 检查是否有载荷绑定: (a, b, c)
+                    if self.check(Token::LeftParen) {
+                        self.advance();
+                        let mut bindings = Vec::new();
+                        if !self.check(Token::RightParen) {
+                            loop {
+                                match self.current_token().clone() {
+                                    Token::Ident(s) => { self.advance(); bindings.push(s) }
+                                    Token::Underscore => { self.advance(); bindings.push("_".to_string()) }
+                                    other => return Err(format!("Expected binding in pattern, found {}", other)),
+                                }
+                                if !self.eat(Token::Comma) { break; }
+                            }
+                        }
+                        self.expect(Token::RightParen)?;
+                        Ok(Pattern::EnumVariantWithPayload {
+                            type_name: name,
+                            variant,
+                            bindings,
+                        })
+                    } else {
+                        Ok(Pattern::EnumVariant { type_name: name, variant })
+                    }
+                } else {
+                    // 单纯标识符: 绑定变量
+                    Ok(Pattern::Bind(name))
+                }
+            }
+            other => Err(format!("Unexpected pattern token: {}", other)),
+        }
     }
 
     fn parse_type_annotation(&mut self) -> Result<TypeAnnotation, String> {
@@ -774,6 +1179,29 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_async_fn_decl() {
+        let program = parse("async fn fetch(url: str) -> str { return url; }").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::FnDecl { name, is_async, .. } = &stmts[0] {
+            assert_eq!(name, "fetch");
+            assert!(*is_async);
+            return;
+        }
+        panic!("Expected async function declaration");
+    }
+
+    #[test]
+    fn test_parse_await_expression() {
+        let program = parse("await fetch(\"https://example.com\")").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::Expr(expr) = &stmts[0] {
+            assert!(matches!(expr, Expr::Await(_)));
+            return;
+        }
+        panic!("Expected await expression");
+    }
+
+    #[test]
     fn test_parse_let_decl() {
         let program = parse("let x: i32 = 42").unwrap();
         let Program::Block(stmts) = program;
@@ -837,5 +1265,158 @@ mod tests {
             return;
         }
         panic!("Expected function call");
+    }
+
+    #[test]
+    fn test_parse_struct_decl() {
+        let program = parse("struct Point { x: i32, y: i32 }").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::StructDecl { name, fields } = &stmts[0] {
+            assert_eq!(name, "Point");
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].name, "x");
+            return;
+        }
+        panic!("Expected struct declaration");
+    }
+
+    #[test]
+    fn test_parse_enum_decl() {
+        let program = parse("enum Color { Red, Green, Blue, RGB(i32, i32, i32) }").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::EnumDecl { name, variants } = &stmts[0] {
+            assert_eq!(name, "Color");
+            assert_eq!(variants.len(), 4);
+            assert_eq!(variants[0].name, "Red");
+            assert_eq!(variants[3].name, "RGB");
+            assert_eq!(variants[3].payload.len(), 3);
+            return;
+        }
+        panic!("Expected enum declaration");
+    }
+
+    #[test]
+    fn test_parse_struct_init_and_field_access() {
+        let program = parse("let p = Point { x: 1, y: 2 }; p.x").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::LetDecl { value: Some(Expr::StructInit { name, fields }), .. } = &stmts[0] {
+            assert_eq!(name, "Point");
+            assert_eq!(fields.len(), 2);
+        } else {
+            panic!("Expected struct init");
+        }
+        if let Stmt::Expr(Expr::FieldAccess { target, field }) = &stmts[1] {
+            assert_eq!(field, "x");
+            assert!(matches!(target.as_ref(), Expr::Ident(_)));
+        } else {
+            panic!("Expected field access");
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_path() {
+        let program = parse("let c = Color::Red").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::LetDecl { value: Some(Expr::Path { base, segment }), .. } = &stmts[0] {
+            assert_eq!(base, "Color");
+            assert_eq!(segment, "Red");
+            return;
+        }
+        panic!("Expected enum path");
+    }
+
+    #[test]
+    fn test_parse_enum_path_call() {
+        let program = parse("let c = Color::RGB(255, 0, 0)").unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::LetDecl { value: Some(Expr::PathCall { base, segment, args }), .. } = &stmts[0] {
+            assert_eq!(base, "Color");
+            assert_eq!(segment, "RGB");
+            assert_eq!(args.len(), 3);
+            return;
+        }
+        panic!("Expected enum path call");
+    }
+
+    #[test]
+    fn test_parse_match_stmt() {
+        let src = "match c { Color::Red => { 1 } Color::RGB(r, g, b) => { r } _ => { 0 } }";
+        let program = parse(src).unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::Match { scrutinee, arms } = &stmts[0] {
+            assert!(matches!(scrutinee, Expr::Ident(_)));
+            assert_eq!(arms.len(), 3);
+            assert!(matches!(arms[0].pattern, Pattern::EnumVariant { .. }));
+            assert!(matches!(arms[1].pattern, Pattern::EnumVariantWithPayload { .. }));
+            assert!(matches!(arms[2].pattern, Pattern::Wildcard));
+            return;
+        }
+        panic!("Expected match statement");
+    }
+
+    #[test]
+    fn test_parse_flow_decl_basic() {
+        let src = r#"
+            flow MyFlow "描述" {
+                source: stream([1, 2, 3]);
+                pipeline: source | collect;
+            }
+        "#;
+        let program = parse(src).unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::FlowDecl { name, description, source, pipeline } = &stmts[0] {
+            assert_eq!(name, "MyFlow");
+            assert_eq!(description.as_deref(), Some("描述"));
+            assert!(source.is_some());
+            assert!(matches!(pipeline, Expr::Binary { op: BinOp::Pipe, .. }));
+            return;
+        }
+        panic!("Expected flow declaration");
+    }
+
+    #[test]
+    fn test_parse_flow_decl_minimal() {
+        let src = r#"
+            flow Bare {
+                pipeline: stream([1]) | collect;
+            }
+        "#;
+        let program = parse(src).unwrap();
+        let Program::Block(stmts) = program;
+        if let Stmt::FlowDecl { name, description, source, pipeline } = &stmts[0] {
+            assert_eq!(name, "Bare");
+            assert!(description.is_none());
+            assert!(source.is_none());
+            assert!(matches!(pipeline, Expr::Binary { op: BinOp::Pipe, .. }));
+            return;
+        }
+        panic!("Expected flow declaration");
+    }
+
+    #[test]
+    fn test_parse_flow_decl_with_sample() {
+        // sample 字段应被解析(不报错),其内容当前被忽略
+        let src = r#"
+            flow Sampled {
+                source: stream([1]);
+                sample: every 1s;
+                pipeline: source | collect;
+            }
+        "#;
+        let program = parse(src).unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::FlowDecl { name, .. } if name == "Sampled"));
+    }
+
+    #[test]
+    fn test_parse_flow_decl_missing_pipeline_errors() {
+        let src = r#"
+            flow Bad {
+                source: stream([1]);
+            }
+        "#;
+        let result = parse(src);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("missing 'pipeline:'"));
     }
 }

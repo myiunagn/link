@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use linkc_parser::{Program, Stmt, Expr, Block, BinOp, UnaryOp, TypeAnnotation, FnSignature};
+use linkc_parser::{Program, Stmt, Expr, Block, BinOp, UnaryOp, TypeAnnotation, FnSignature, StructField, EnumVariantDecl, Pattern};
 use libloading::{Library, Symbol};
 
 pub mod python;
@@ -68,6 +68,17 @@ pub enum Value {
         bridge_path: String,
         signature: FnSignature,
     },
+    /// 结构体实例
+    StructInstance {
+        type_name: String,
+        fields: HashMap<String, Value>,
+    },
+    /// 枚举值
+    EnumValue {
+        type_name: String,
+        variant: String,
+        payload: Vec<Value>,
+    },
 }
 
 impl PartialEq for Value {
@@ -88,6 +99,12 @@ impl PartialEq for Value {
             (Value::HtmlFunction { name: n1, .. }, Value::HtmlFunction { name: n2, .. }) => n1 == n2,
             (Value::ProcessFunction { name: n1, .. }, Value::ProcessFunction { name: n2, .. }) => n1 == n2,
             (Value::Stream(a), Value::Stream(b)) => a == b,
+            (Value::StructInstance { type_name: t1, fields: f1 },
+             Value::StructInstance { type_name: t2, fields: f2 }) => t1 == t2 && f1 == f2,
+            (Value::EnumValue { type_name: t1, variant: v1, payload: p1 },
+             Value::EnumValue { type_name: t2, variant: v2, payload: p2 }) => {
+                t1 == t2 && v1 == v2 && p1 == p2
+            }
             _ => false,
         }
     }
@@ -111,6 +128,8 @@ impl Value {
             Value::HtmlFunction { .. } => "html_function",
             Value::ProcessFunction { .. } => "process_function",
             Value::Stream(_) => "stream",
+            Value::StructInstance { type_name, .. } => type_name,
+            Value::EnumValue { type_name, .. } => type_name,
         }
     }
 
@@ -168,6 +187,12 @@ pub struct InterpContext {
     pub java: Option<JavaRuntime>,
     pub html: Option<HtmlRuntime>,
     pub process: Option<ProcessRuntime>,
+    /// 已注册的 struct 类型定义: name -> fields
+    pub struct_defs: HashMap<String, Vec<StructField>>,
+    /// 已注册的 enum 类型定义: name -> variants
+    pub enum_defs: HashMap<String, Vec<EnumVariantDecl>>,
+    /// 当前函数的 return 值（用于跨语句块传递返回值）
+    pub return_value: Option<Value>,
 }
 
 impl InterpContext {
@@ -301,8 +326,9 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
                 Some(expr) => eval_expr(expr, env, ctx)?,
                 None => Value::None,
             };
-            // 用特殊错误类型传递 return 值
-            Err(format!("__return__|{}", value_to_string(&val)))
+            // 用 InterpContext 存储 return 值，避免序列化复杂类型
+            ctx.return_value = Some(val);
+            Err("__return__".to_string())
         }
         Stmt::If { condition, then_branch, else_branch } => {
             let cond = eval_expr(condition, env, ctx)?;
@@ -360,6 +386,128 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
             // (后续会生成 C 头文件 / Python 模块等)
             Ok(Value::None)
         }
+        Stmt::StructDecl { name, fields } => {
+            ctx.struct_defs.insert(name.clone(), fields.clone());
+            Ok(Value::None)
+        }
+        Stmt::EnumDecl { name, variants } => {
+            ctx.enum_defs.insert(name.clone(), variants.clone());
+            Ok(Value::None)
+        }
+        Stmt::Match { scrutinee, arms } => {
+            let val = eval_expr(scrutinee, env, ctx)?;
+            eval_match(&val, arms, env, ctx)
+        }
+        Stmt::FlowDecl { name, description, source, pipeline } => {
+            eval_flow(name, description.as_deref(), source.as_ref(), pipeline, env, ctx)
+        }
+    }
+}
+
+/// 执行 match 语句: 按顺序尝试匹配每个 arm 的 pattern
+fn eval_match(val: &Value, arms: &[linkc_parser::MatchArm], env: &mut Environment, ctx: &mut InterpContext) -> Result<Value, String> {
+    for arm in arms {
+        // 为每个 arm 创建一个子作用域,这样 pattern 绑定的变量不会泄露到外部
+        let mut arm_env = Environment::extend(env.clone());
+        if try_match_pattern(&arm.pattern, val, &mut arm_env)? {
+            return match eval_block(&arm.body.stmts, &mut arm_env, ctx) {
+                Ok(v) => Ok(v),
+                Err(e) if e == "__return__" => Err(e),
+                Err(e) => Err(e),
+            };
+        }
+    }
+    Err(format!("No match arm matched value: {}", value_to_string(val)))
+}
+
+/// 执行 flow 声明块
+///
+/// v0.1 语义:flow 是声明式数据流定义,但在树漫游解释器中"自动调度"
+/// 等价于"立即在子作用域中求值 pipeline"。
+///
+/// - 若有 `source:`,先求值 source 表达式并绑定到变量 `source`(在子作用域中)
+/// - 然后求值 `pipeline:` 表达式(其中可引用 `source`)
+/// - pipeline 通常以 `| for_each(...)` 或 `| collect` 结尾,求值时即触发执行
+///
+/// 多个 flow 块按源码出现顺序串行执行。返回 pipeline 的求值结果。
+fn eval_flow(
+    name: &str,
+    description: Option<&str>,
+    source: Option<&linkc_parser::Expr>,
+    pipeline: &linkc_parser::Expr,
+    env: &mut Environment,
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    // 为 flow 创建独立子作用域,source 变量不会污染外层
+    let mut flow_env = Environment::extend(env.clone());
+
+    // 若有 source 字段,求值并绑定到 `source` 变量
+    if let Some(src_expr) = source {
+        let src_val = eval_expr(src_expr, &mut flow_env, ctx)?;
+        flow_env.set("source".to_string(), src_val);
+    }
+
+    // 求值 pipeline
+    let result = eval_expr(pipeline, &mut flow_env, ctx)?;
+
+    // flow 名称与描述当前仅作为元数据(未来可用于调度器注册)
+    let _ = (name, description);
+
+    Ok(result)
+}
+
+/// 尝试用 pattern 匹配 value,匹配成功则将绑定写入 env 并返回 true
+fn try_match_pattern(pattern: &Pattern, val: &Value, env: &mut Environment) -> Result<bool, String> {
+    match pattern {
+        Pattern::Wildcard => Ok(true),
+        Pattern::Bind(name) => {
+            if name == "_" {
+                return Ok(true);
+            }
+            env.set(name.clone(), val.clone());
+            Ok(true)
+        }
+        Pattern::Literal(expr) => {
+            // 字面量模式仅支持常量表达式
+            let lit_val = match expr {
+                Expr::Int(n) => Value::Int(*n),
+                Expr::Float(n) => Value::Float(*n),
+                Expr::Str(s) => Value::Str(s.clone()),
+                Expr::Bool(b) => Value::Bool(*b),
+                Expr::None => Value::None,
+                _ => return Err(format!("Unsupported literal pattern")),
+            };
+            Ok(val == &lit_val)
+        }
+        Pattern::EnumVariant { type_name, variant } => {
+            match val {
+                Value::EnumValue { type_name: tn, variant: v, payload } => {
+                    if payload.is_empty() {
+                        Ok(tn == type_name && v == variant)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                _ => Ok(false),
+            }
+        }
+        Pattern::EnumVariantWithPayload { type_name, variant, bindings } => {
+            match val {
+                Value::EnumValue { type_name: tn, variant: v, payload } => {
+                    if tn == type_name && v == variant && payload.len() == bindings.len() {
+                        for (binding, value) in bindings.iter().zip(payload.iter()) {
+                            if binding != "_" {
+                                env.set(binding.clone(), value.clone());
+                            }
+                        }
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                _ => Ok(false),
+            }
+        }
     }
 }
 
@@ -385,6 +533,20 @@ fn value_to_string(val: &Value) -> String {
         Value::Stream(items) => {
             let parts: Vec<String> = items.iter().map(value_to_string).collect();
             format!("stream[{}]", parts.join(", "))
+        }
+        Value::StructInstance { type_name, fields } => {
+            let parts: Vec<String> = fields.iter()
+                .map(|(k, v)| format!("{}: {}", k, value_to_string(v)))
+                .collect();
+            format!("{} {{ {} }}", type_name, parts.join(", "))
+        }
+        Value::EnumValue { type_name, variant, payload } => {
+            if payload.is_empty() {
+                format!("{}::{}", type_name, variant)
+            } else {
+                let parts: Vec<String> = payload.iter().map(value_to_string).collect();
+                format!("{}::{}({})", type_name, variant, parts.join(", "))
+            }
         }
     }
 }
@@ -453,16 +615,109 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
             }
         }
         Expr::BlockExpr(block) => eval_block(&block.stmts, env, ctx),
+        Expr::FieldAccess { target, field } => {
+            let target_val = eval_expr(target, env, ctx)?;
+            match target_val {
+                Value::StructInstance { fields, .. } => {
+                    fields.get(field).cloned().ok_or_else(|| format!("No such field: {}", field))
+                }
+                _ => Err(format!("Cannot access field '{}' on type {}", field, target_val.type_name())),
+            }
+        }
+        Expr::Path { base, segment } => {
+            // 检查是否是已注册的 enum 类型
+            if ctx.enum_defs.contains_key(base) {
+                // 验证变体存在且无参数
+                let variants = ctx.enum_defs.get(base).unwrap();
+                let found = variants.iter().find(|v| v.name == *segment && v.payload.is_empty());
+                if found.is_none() {
+                    return Err(format!("No such variant '{}' in enum {} (or it requires payload)", segment, base));
+                }
+                Ok(Value::EnumValue {
+                    type_name: base.clone(),
+                    variant: segment.clone(),
+                    payload: Vec::new(),
+                })
+            } else {
+                Err(format!("Unknown type or path: {}::{}", base, segment))
+            }
+        }
+        Expr::StructInit { name, fields } => {
+            // 检查是否是已注册的 struct 类型
+            let struct_def = ctx.struct_defs.get(name)
+                .ok_or_else(|| format!("Unknown struct type: {}", name))?
+                .clone();
+            // 验证字段
+            let mut field_values = HashMap::new();
+            // 初始化所有字段为 None
+            for sf in &struct_def {
+                field_values.insert(sf.name.clone(), Value::None);
+            }
+            // 应用用户提供的字段值
+            for (fname, fexpr) in fields {
+                if !struct_def.iter().any(|sf| sf.name == *fname) {
+                    return Err(format!("Struct {} has no field '{}'", name, fname));
+                }
+                let fval = eval_expr(fexpr, env, ctx)?;
+                field_values.insert(fname.clone(), fval);
+            }
+            Ok(Value::StructInstance {
+                type_name: name.clone(),
+                fields: field_values,
+            })
+        }
+        Expr::PathCall { base, segment, args } => {
+            // 带参数的枚举变体构造
+            if ctx.enum_defs.contains_key(base) {
+                let variants = ctx.enum_defs.get(base).unwrap();
+                let found = variants.iter().find(|v| v.name == *segment);
+                if found.is_none() {
+                    return Err(format!("No such variant '{}' in enum {}", segment, base));
+                }
+                let variant_def = found.unwrap();
+                if variant_def.payload.len() != args.len() {
+                    return Err(format!(
+                        "Variant {}::{} expects {} args, got {}",
+                        base, segment, variant_def.payload.len(), args.len()
+                    ));
+                }
+                let mut payload = Vec::with_capacity(args.len());
+                for arg in args {
+                    payload.push(eval_expr(arg, env, ctx)?);
+                }
+                Ok(Value::EnumValue {
+                    type_name: base.clone(),
+                    variant: segment.clone(),
+                    payload,
+                })
+            } else {
+                Err(format!("Unknown type or path: {}::{}", base, segment))
+            }
+        }
+        Expr::MatchExpr { scrutinee, arms } => {
+            let val = eval_expr(scrutinee, env, ctx)?;
+            eval_match(&val, arms, env, ctx)
+        }
+        Expr::Await(inner) => {
+            // v0.1 树漫游解释器:await 直接求值内部表达式(阻塞语义)
+            // 真正的 async/await 并发调度留待 v0.2 LLVM 后端 + Tokio-like 运行时
+            eval_expr(inner, env, ctx)
+        }
     }
 }
 
 fn eval_binary_op(op: &BinOp, left: &Value, right: &Value) -> Result<Value, String> {
     match op {
         BinOp::Add => {
-            if left.type_name() == "int" && right.type_name() == "int" {
-                Ok(Value::Int(left.as_int()? + right.as_int()?))
-            } else {
-                Ok(Value::Float(left.as_float()? + right.as_float()?))
+            match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+                (Value::Str(a), Value::Str(b)) => Ok(Value::Str(format!("{}{}", a, b))),
+                (Value::List(a), Value::List(b)) => {
+                    let mut combined = a.clone();
+                    combined.extend(b.iter().cloned());
+                    Ok(Value::List(combined))
+                }
+                _ => Ok(Value::Float(left.as_float()? + right.as_float()?)),
             }
         }
         BinOp::Sub => {
@@ -583,9 +838,9 @@ pub fn call_function(func: &Value, args: &[Value], ctx: &mut InterpContext) -> R
             }
             match eval_block(&body.stmts, &mut local_env, ctx) {
                 Ok(val) => Ok(val),
-                Err(e) if e.starts_with("__return__|") => {
-                    let val_str = &e["__return__|".len()..];
-                    Ok(parse_value_from_string(val_str))
+                Err(e) if e == "__return__" => {
+                    // 从 ctx 取出 return 值
+                    Ok(ctx.return_value.take().unwrap_or(Value::None))
                 }
                 Err(e) => Err(e),
             }
@@ -1124,6 +1379,22 @@ fn register_builtins(env: &mut Environment) {
         arity: Some(1),
         func: builtin_collect,
     });
+    env.set("sleep".to_string(), Value::NativeFunction {
+        name: "sleep".to_string(),
+        arity: Some(1),
+        func: builtin_sleep,
+    });
+}
+
+/// sleep(ms) —— 异步原语:阻塞当前线程 ms 毫秒
+/// v0.1 中作为 async 函数的占位原语,用于演示异步编程模型
+fn builtin_sleep(args: &[Value]) -> Result<Value, String> {
+    if args.len() != 1 {
+        return Err(format!("sleep expects 1 arg, got {}", args.len()));
+    }
+    let ms = args[0].as_int()?;
+    std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    Ok(Value::None)
 }
 
 fn builtin_print(args: &[Value]) -> Result<Value, String> {
@@ -1173,6 +1444,26 @@ fn print_value(val: &Value) {
                 print_value(item);
             }
             print!("]");
+        }
+        Value::StructInstance { type_name, fields } => {
+            print!("{} {{ ", type_name);
+            for (i, (k, v)) in fields.iter().enumerate() {
+                if i > 0 { print!(", "); }
+                print!("{}: ", k);
+                print_value(v);
+            }
+            print!(" }}");
+        }
+        Value::EnumValue { type_name, variant, payload } => {
+            print!("{}::{}", type_name, variant);
+            if !payload.is_empty() {
+                print!("(");
+                for (i, v) in payload.iter().enumerate() {
+                    if i > 0 { print!(", "); }
+                    print_value(v);
+                }
+                print!(")");
+            }
         }
     }
 }
@@ -1240,22 +1531,6 @@ fn builtin_collect(args: &[Value]) -> Result<Value, String> {
     match &args[0] {
         Value::Stream(items) => Ok(Value::List(items.clone())),
         v => Err(format!("collect() expects a stream, got {}", v.type_name())),
-    }
-}
-
-fn parse_value_from_string(s: &str) -> Value {
-    if let Ok(n) = s.parse::<i64>() {
-        Value::Int(n)
-    } else if let Ok(f) = s.parse::<f64>() {
-        Value::Float(f)
-    } else if s == "true" {
-        Value::Bool(true)
-    } else if s == "false" {
-        Value::Bool(false)
-    } else if s == "none" {
-        Value::None
-    } else {
-        Value::Str(s.to_string())
     }
 }
 
@@ -1726,5 +2001,387 @@ mod tests {
     fn test_stream_empty() {
         let result = run("collect(stream([]))").unwrap();
         assert_eq!(result, Value::List(vec![]));
+    }
+
+    // ---- Struct 测试 ----
+
+    #[test]
+    fn test_struct_decl_and_init() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            let p = Point { x: 1, y: 2 };
+            p
+        "#).unwrap();
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("x".to_string(), Value::Int(1));
+        fields.insert("y".to_string(), Value::Int(2));
+        assert_eq!(result, Value::StructInstance {
+            type_name: "Point".to_string(),
+            fields,
+        });
+    }
+
+    #[test]
+    fn test_struct_field_access() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            let p = Point { x: 10, y: 20 };
+            p.x
+        "#).unwrap();
+        assert_eq!(result, Value::Int(10));
+    }
+
+    #[test]
+    fn test_struct_field_access_second() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            let p = Point { x: 10, y: 20 };
+            p.y
+        "#).unwrap();
+        assert_eq!(result, Value::Int(20));
+    }
+
+    #[test]
+    fn test_struct_unknown_field_error() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            let p = Point { x: 1, y: 2 };
+            p.z
+        "#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_struct_init_unknown_field_error() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            let p = Point { x: 1, y: 2, z: 3 };
+            p
+        "#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_struct_in_function() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            fn make_point(a: i32, b: i32) -> Point {
+                return Point { x: a, y: b };
+            }
+            let p = make_point(5, 6);
+            p.x + p.y
+        "#).unwrap();
+        assert_eq!(result, Value::Int(11));
+    }
+
+    // ---- Enum 测试 ----
+
+    #[test]
+    fn test_enum_decl_and_unit_variant() {
+        let result = run(r#"
+            enum Color { Red, Green, Blue }
+            Color::Red
+        "#).unwrap();
+        assert_eq!(result, Value::EnumValue {
+            type_name: "Color".to_string(),
+            variant: "Red".to_string(),
+            payload: vec![],
+        });
+    }
+
+    #[test]
+    fn test_enum_with_payload() {
+        let result = run(r#"
+            enum Color { Red, RGB(i32, i32, i32) }
+            Color::RGB(255, 0, 0)
+        "#).unwrap();
+        assert_eq!(result, Value::EnumValue {
+            type_name: "Color".to_string(),
+            variant: "RGB".to_string(),
+            payload: vec![Value::Int(255), Value::Int(0), Value::Int(0)],
+        });
+    }
+
+    #[test]
+    fn test_enum_unknown_variant_error() {
+        let result = run(r#"
+            enum Color { Red, Green }
+            Color::Blue
+        "#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_enum_payload_arity_error() {
+        let result = run(r#"
+            enum Color { RGB(i32, i32, i32) }
+            Color::RGB(1, 2)
+        "#);
+        assert!(result.is_err());
+    }
+
+    // ---- Match 测试 ----
+
+    #[test]
+    fn test_match_unit_variant() {
+        let result = run(r#"
+            enum Color { Red, Green, Blue }
+            let c = Color::Green;
+            match c {
+                Color::Red => { 1 }
+                Color::Green => { 2 }
+                Color::Blue => { 3 }
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::Int(2));
+    }
+
+    #[test]
+    fn test_match_with_payload_bindings() {
+        let result = run(r#"
+            enum Msg { Quit, Move(i32, i32), Write(str) }
+            let m = Msg::Move(10, 20);
+            match m {
+                Msg::Quit => { 0 }
+                Msg::Move(x, y) => { x + y }
+                Msg::Write(s) => { 0 }
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::Int(30));
+    }
+
+    #[test]
+    fn test_match_wildcard() {
+        let result = run(r#"
+            enum Color { Red, Green, Blue }
+            let c = Color::Blue;
+            match c {
+                Color::Red => { 1 }
+                _ => { 99 }
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::Int(99));
+    }
+
+    #[test]
+    fn test_match_literal_int() {
+        let result = run(r#"
+            let x = 5;
+            match x {
+                1 => { 100 }
+                5 => { 200 }
+                _ => { 300 }
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::Int(200));
+    }
+
+    #[test]
+    fn test_match_no_arm_error() {
+        let result = run(r#"
+            enum Color { Red, Green }
+            let c = Color::Red;
+            match c {
+                Color::Green => { 1 }
+            }
+        "#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_match_string_literal() {
+        let result = run(r#"
+            let s = "hello";
+            match s {
+                "hi" => { 1 }
+                "hello" => { 2 }
+                _ => { 3 }
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::Int(2));
+    }
+
+    #[test]
+    fn test_struct_and_enum_combined() {
+        let result = run(r#"
+            struct Point { x: i32, y: i32 }
+            enum Shape { Circle(f64), Rect(Point, Point) }
+            let p1 = Point { x: 0, y: 0 };
+            let p2 = Point { x: 10, y: 20 };
+            let s = Shape::Rect(p1, p2);
+            match s {
+                Shape::Circle(r) => { 0 }
+                Shape::Rect(a, b) => { b.x + b.y }
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::Int(30));
+    }
+
+    // ---- Flow 声明块测试 ----
+
+    #[test]
+    fn test_flow_basic_pipeline() {
+        let result = run(r#"
+            fn double(x: i32) -> i32 { return x * 2; }
+            flow DoubleAll {
+                source: stream([1, 2, 3]);
+                pipeline:
+                    source | map(double) | collect;
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    }
+
+    #[test]
+    fn test_flow_without_source() {
+        let result = run(r#"
+            fn inc(x: i32) -> i32 { return x + 1; }
+            flow Inline {
+                pipeline:
+                    stream([10, 20, 30]) | map(inc) | collect;
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::List(vec![Value::Int(11), Value::Int(21), Value::Int(31)]));
+    }
+
+    #[test]
+    fn test_flow_with_description() {
+        let result = run(r#"
+            fn is_even(x: i32) -> bool { return x % 2 == 0; }
+            flow Evens "过滤偶数" {
+                source: stream([1, 2, 3, 4, 5, 6]);
+                pipeline:
+                    source | filter(is_even) | collect;
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::List(vec![Value::Int(2), Value::Int(4), Value::Int(6)]));
+    }
+
+    #[test]
+    fn test_flow_sample_field_ignored() {
+        // sample 字段应被解析但忽略,不报错
+        let result = run(r#"
+            fn id(x: i32) -> i32 { return x; }
+            flow Sampled "采样流" {
+                source: stream([100, 200]);
+                sample: every 1s;
+                pipeline:
+                    source | map(id) | collect;
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::List(vec![Value::Int(100), Value::Int(200)]));
+    }
+
+    #[test]
+    fn test_flow_multiple_executed_in_order() {
+        // 多个 flow 按源码顺序执行,返回最后一个的值
+        let result = run(r#"
+            fn double(x: i32) -> i32 { return x * 2; }
+            fn triple(x: i32) -> i32 { return x * 3; }
+            flow First {
+                source: stream([1, 2]);
+                pipeline: source | map(double) | collect;
+            }
+            flow Second {
+                source: stream([1, 2]);
+                pipeline: source | map(triple) | collect;
+            }
+        "#).unwrap();
+        assert_eq!(result, Value::List(vec![Value::Int(3), Value::Int(6)]));
+    }
+
+    #[test]
+    fn test_flow_source_variable_isolated() {
+        // source 变量不应泄露到 flow 块外部
+        let result = run(r#"
+            fn double(x: i32) -> i32 { return x * 2; }
+            flow F {
+                source: stream([1, 2, 3]);
+                pipeline: source | map(double) | collect;
+            }
+            // 此处 source 不应可见,应报错
+            source
+        "#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Undefined variable: source"));
+    }
+
+    #[test]
+    fn test_flow_missing_pipeline_errors() {
+        let result = run(r#"
+            flow Bad {
+                source: stream([1, 2, 3]);
+            }
+        "#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("missing 'pipeline:'"));
+    }
+
+    #[test]
+    fn test_string_concatenation() {
+        // 顺便验证 str + str 字符串拼接(此前是 bug)
+        let result = run(r#""hello, " + "world""#).unwrap();
+        assert_eq!(result, Value::Str("hello, world".to_string()));
+    }
+
+    // ---- async / await / sleep 测试 ----
+
+    #[test]
+    fn test_async_fn_declaration() {
+        // async fn 可以正常声明和调用(v0.1 阻塞语义)
+        let result = run(r#"
+            async fn compute(a: i32, b: i32) -> i32 {
+                return a + b;
+            }
+            compute(3, 4)
+        "#).unwrap();
+        assert_eq!(result, Value::Int(7));
+    }
+
+    #[test]
+    fn test_await_expression() {
+        // await 调用 async 函数(v0.1 等价于直接调用)
+        let result = run(r#"
+            async fn double(x: i32) -> i32 {
+                return x * 2;
+            }
+            await double(21)
+        "#).unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[test]
+    fn test_await_in_let_binding() {
+        let result = run(r#"
+            async fn greet(name: str) -> str {
+                return "hello, " + name;
+            }
+            let msg = await greet("Link");
+            msg
+        "#).unwrap();
+        assert_eq!(result, Value::Str("hello, Link".to_string()));
+    }
+
+    #[test]
+    fn test_async_await_chained() {
+        // 多个 await 链式调用
+        let result = run(r#"
+            async fn inc(x: i32) -> i32 { return x + 1; }
+            async fn double(x: i32) -> i32 { return x * 2; }
+            let a = await inc(5);
+            let b = await double(a);
+            b
+        "#).unwrap();
+        assert_eq!(result, Value::Int(12));
+    }
+
+    #[test]
+    fn test_list_concatenation() {
+        // 验证 list + list 拼接(此前是 bug)
+        let result = run(r#"[1, 2, 3] + [4, 5]"#).unwrap();
+        assert_eq!(result, Value::List(vec![
+            Value::Int(1), Value::Int(2), Value::Int(3),
+            Value::Int(4), Value::Int(5),
+        ]));
     }
 }

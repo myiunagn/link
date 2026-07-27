@@ -1,0 +1,35 @@
+// link_sdk.link
+// Link 语言 SDK 示例 —— 通过 export 块向多种目标语言导出 API
+// 用法:
+//   link bindgen --lang c          link_sdk.link -o link_sdk.h
+//   link bindgen --lang python     link_sdk.link -o link_sdk.pyi
+//   link bindgen --lang typescript link_sdk.link -o link_sdk.d.ts
+
+// 导出给 C / C++ 使用
+export "C" {
+    fn link_init() -> bool;
+    fn link_create_room(max_players: u8) -> u32;
+    fn link_join_room(room_id: u32, player_name: str) -> bool;
+    fn link_send_message(room_id: u32, message: str) -> bool;
+    fn link_get_player_count(room_id: u32) -> u32;
+    fn link_shutdown();
+}
+
+// 导出给 Python 使用
+export "python" module "link_game" {
+    fn start_server(port: u16) -> bool;
+    fn create_room(max_players: u8) -> u32;
+    fn broadcast(room_id: u32, msg: str);
+    fn get_player_count(room_id: u32) -> u32;
+    async fn fetch_state(room_id: u32) -> str;
+    fn events(room_id: u32) -> stream<i32>;
+}
+
+// 导出给 TypeScript 使用
+export "typescript" module "link-game-sdk" {
+    fn createRoom(maxPlayers: u8) -> u32;
+    fn joinRoom(roomId: u32, name: str) -> bool;
+    fn broadcast(roomId: u32, msg: str) -> void;
+    async fn fetchState(roomId: u32) -> str;
+    fn playerCount(roomId: u32) -> u32;
+}

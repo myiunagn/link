@@ -1,0 +1,39 @@
+// flow_demo.link
+// Link 语言 flow 声明块示例 —— 声明式数据流处理
+
+fn double(x: i32) -> i32 { return x * 2; }
+fn is_even(x: i32) -> bool { return x % 2 == 0; }
+fn square(x: i32) -> i32 { return x * x; }
+fn greet(name: str) { println("hello, " + name); }
+fn print_val(v: i32) { println(v); }
+
+// 示例 1: for_each 消费流
+flow HelloFlow "问候流" {
+    source: stream(["alice", "bob", "charlie"]);
+    pipeline:
+        source | for_each(greet);
+}
+
+// 示例 2: map + filter + collect 链式处理
+flow SquareEvens "平方偶数" {
+    source: stream([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    pipeline:
+        source | filter(is_even) | map(square) | collect;
+}
+
+// 示例 3: 带 sample 字段(v0.1 解析但忽略,不报错)
+flow SampledFlow "采样流" {
+    source: stream([100, 200, 300]);
+    sample: every 1s;
+    pipeline:
+        source | for_each(print_val);
+}
+
+// 示例 4: 无 source,pipeline 内联 stream
+flow InlineFlow {
+    pipeline:
+        stream([1, 2, 3]) | map(double) | collect;
+}
+
+// 执行顺序:HelloFlow → SquareEvens → SampledFlow → InlineFlow
+// 最后一个 flow (InlineFlow) 的返回值会被打印
