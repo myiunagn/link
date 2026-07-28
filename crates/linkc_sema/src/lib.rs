@@ -894,6 +894,11 @@ impl ConstFolder {
                     pipeline: self.fold_expr(pipeline),
                 }
             }
+            Stmt::ModDecl { name } => Stmt::ModDecl { name: name.clone() },
+            Stmt::UseDecl { path, alias } => Stmt::UseDecl {
+                path: path.clone(),
+                alias: alias.clone(),
+            },
         }
     }
 

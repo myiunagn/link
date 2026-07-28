@@ -733,6 +733,9 @@ impl CBackend {
             Stmt::FlowDecl { .. } => {
                 return Err("flow not supported in C backend yet".to_string());
             }
+            Stmt::ModDecl { .. } | Stmt::UseDecl { .. } => {
+                // 模块/导入声明是元数据,C 代码生成无需输出
+            }
         }
 
         Ok(lines)
@@ -828,7 +831,8 @@ impl CBackend {
                     has_toplevel_code = true;
                 }
                 Stmt::FnDecl { .. } | Stmt::ExternDecl { .. } | Stmt::ExportDecl { .. }
-                | Stmt::StructDecl { .. } | Stmt::EnumDecl { .. } | Stmt::FlowDecl { .. } => {
+                | Stmt::StructDecl { .. } | Stmt::EnumDecl { .. } | Stmt::FlowDecl { .. }
+                | Stmt::ModDecl { .. } | Stmt::UseDecl { .. } => {
                     self.generate_stmt(stmt)?;
                 }
                 Stmt::LetDecl { .. } | Stmt::Assign { .. } | Stmt::If { .. }

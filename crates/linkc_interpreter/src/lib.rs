@@ -287,7 +287,7 @@ pub fn eval_program(program: &Program, env: &mut Environment, ctx: &mut InterpCo
     }
 }
 
-fn eval_block(stmts: &[Stmt], env: &mut Environment, ctx: &mut InterpContext) -> Result<Value, String> {
+pub fn eval_block(stmts: &[Stmt], env: &mut Environment, ctx: &mut InterpContext) -> Result<Value, String> {
     let mut last = Value::None;
     for stmt in stmts {
         last = eval_stmt(stmt, env, ctx)?;
@@ -400,6 +400,14 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
         }
         Stmt::FlowDecl { name, description, source, pipeline } => {
             eval_flow(name, description.as_deref(), source.as_ref(), pipeline, env, ctx)
+        }
+        Stmt::ModDecl { name: _ } => {
+            // 模块声明是元数据,解释器无需执行
+            Ok(Value::None)
+        }
+        Stmt::UseDecl { path: _, alias: _ } => {
+            // 导入声明由 CLI 编译前处理(加载并合并 AST),解释器无需执行
+            Ok(Value::None)
         }
     }
 }
@@ -1398,20 +1406,49 @@ fn builtin_sleep(args: &[Value]) -> Result<Value, String> {
 }
 
 fn builtin_print(args: &[Value]) -> Result<Value, String> {
-    for (i, arg) in args.iter().enumerate() {
-        if i > 0 { print!(" "); }
-        print_value(arg);
-    }
+    print_args(args);
     Ok(Value::None)
 }
 
 fn builtin_println(args: &[Value]) -> Result<Value, String> {
+    print_args(args);
+    println!();
+    Ok(Value::None)
+}
+
+/// 统一打印逻辑:支持 `{}` 格式化占位符
+fn print_args(args: &[Value]) {
+    if args.is_empty() {
+        return;
+    }
+    // 若第一个参数是字符串且包含 `{}`,则按格式化字符串处理
+    if let Value::Str(fmt) = &args[0] {
+        if fmt.contains("{}") && args.len() > 1 {
+            let mut arg_idx = 1;
+            let chars: Vec<char> = fmt.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                if i + 1 < chars.len() && chars[i] == '{' && chars[i + 1] == '}' {
+                    if arg_idx < args.len() {
+                        print_value(&args[arg_idx]);
+                        arg_idx += 1;
+                    } else {
+                        print!("{{}}");
+                    }
+                    i += 2;
+                } else {
+                    print!("{}", chars[i]);
+                    i += 1;
+                }
+            }
+            return;
+        }
+    }
+    // 回退: 空格分隔
     for (i, arg) in args.iter().enumerate() {
         if i > 0 { print!(" "); }
         print_value(arg);
     }
-    println!();
-    Ok(Value::None)
 }
 
 fn print_value(val: &Value) {

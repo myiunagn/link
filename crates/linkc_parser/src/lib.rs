@@ -117,6 +117,15 @@ pub enum Stmt {
         source: Option<Expr>,
         pipeline: Expr,
     },
+    /// 模块声明: `module foo::bar;`
+    ModDecl {
+        name: String,
+    },
+    /// 导入声明: `import foo::bar;` 或 `import foo::bar as baz;`
+    UseDecl {
+        path: Vec<String>,
+        alias: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -358,6 +367,8 @@ impl Parser {
             Token::Enum => self.parse_enum_decl(),
             Token::Match => self.parse_match_stmt(),
             Token::Flow => self.parse_flow_decl(),
+            Token::Mod => self.parse_mod_decl(),
+            Token::Use => self.parse_use_decl(),
             Token::LeftBrace => {
                 let block = self.parse_block()?;
                 Ok(Stmt::Expr(Expr::BlockExpr(block)))
@@ -740,6 +751,8 @@ impl Parser {
 
     fn parse_let_decl(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Let)?;
+        // 可选 `mut` 关键字 (v0.1 中可变性不强制,仅语法兼容)
+        self.eat(Token::Mut);
         let name = if let Token::Ident(ref s) = self.current_token() {
             s.clone()
         } else {
@@ -955,6 +968,56 @@ impl Parser {
 
         let pipeline = pipeline.ok_or_else(|| format!("flow {} missing 'pipeline:' section", name))?;
         Ok(Stmt::FlowDecl { name, description, source, pipeline })
+    }
+
+    /// 解析模块声明: `module foo::bar::baz;`
+    fn parse_mod_decl(&mut self) -> Result<Stmt, String> {
+        self.expect(Token::Mod)?;
+        let mut parts = Vec::new();
+        // 第一个标识符
+        match self.current_token().clone() {
+            Token::Ident(s) => { parts.push(s); self.advance(); }
+            other => return Err(format!("Expected module name after 'mod', found {}", other)),
+        }
+        // 后续 `::ident`
+        while self.check(Token::DoubleColon) {
+            self.advance();
+            match self.current_token().clone() {
+                Token::Ident(s) => { parts.push(s); self.advance(); }
+                other => return Err(format!("Expected identifier after '::' in module path, found {}", other)),
+            }
+        }
+        self.expect(Token::Semicolon)?;
+        Ok(Stmt::ModDecl { name: parts.join("::") })
+    }
+
+    /// 解析导入声明: `use foo::bar::baz;` 或 `use foo::bar as baz;`
+    fn parse_use_decl(&mut self) -> Result<Stmt, String> {
+        self.expect(Token::Use)?;
+        let mut path = Vec::new();
+        match self.current_token().clone() {
+            Token::Ident(s) => { path.push(s); self.advance(); }
+            other => return Err(format!("Expected identifier after 'use', found {}", other)),
+        }
+        while self.check(Token::DoubleColon) {
+            self.advance();
+            match self.current_token().clone() {
+                Token::Ident(s) => { path.push(s); self.advance(); }
+                other => return Err(format!("Expected identifier after '::' in use path, found {}", other)),
+            }
+        }
+        // 可选 `as alias`
+        let alias = if self.check(Token::As) {
+            self.advance();
+            match self.current_token().clone() {
+                Token::Ident(s) => { self.advance(); Some(s) }
+                other => return Err(format!("Expected identifier after 'as', found {}", other)),
+            }
+        } else {
+            None
+        };
+        self.expect(Token::Semicolon)?;
+        Ok(Stmt::UseDecl { path, alias })
     }
 
     /// 解析 match 表达式
@@ -1418,5 +1481,68 @@ mod tests {
         let result = parse(src);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("missing 'pipeline:'"));
+    }
+
+    // ===== Phase 2.12: 模块系统测试 =====
+
+    #[test]
+    fn test_parse_mod_decl_simple() {
+        let program = parse("mod foo;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::ModDecl { name } if name == "foo"));
+    }
+
+    #[test]
+    fn test_parse_mod_decl_nested() {
+        let program = parse("mod foo::bar::baz;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::ModDecl { name } if name == "foo::bar::baz"));
+    }
+
+    #[test]
+    fn test_parse_use_decl_simple() {
+        let program = parse("use foo;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::UseDecl { path, alias: None } if path == &vec!["foo".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_use_decl_nested() {
+        let program = parse("use foo::bar::baz;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::UseDecl { path, alias: None } if path.len() == 3 && path[0] == "foo" && path[2] == "baz"));
+    }
+
+    #[test]
+    fn test_parse_use_decl_with_alias() {
+        let program = parse("use foo::bar as baz;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::UseDecl { path, alias: Some(a) } if path.len() == 2 && a == "baz"));
+    }
+
+    #[test]
+    fn test_parse_let_mut() {
+        let program = parse("let mut x = 42;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::LetDecl { name, .. } if name == "x"));
+    }
+
+    #[test]
+    fn test_parse_let_mut_with_type() {
+        let program = parse("let mut x: i64 = 42;").unwrap();
+        let Program::Block(stmts) = program;
+        assert!(matches!(&stmts[0], Stmt::LetDecl { name, type_annotation: Some(_), .. } if name == "x"));
+    }
+
+    #[test]
+    fn test_parse_mod_missing_semicolon_errors() {
+        let result = parse("mod foo");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_use_missing_name_errors() {
+        let result = parse("use ;");
+        assert!(result.is_err());
     }
 }

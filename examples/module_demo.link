@@ -1,0 +1,13 @@
+// module_demo.link - 模块系统演示
+// 通过 use 声明导入 math_utils 模块
+
+use math_utils;
+
+fn main() {
+    println("=== Module System Demo ===");
+    println("fib(15) = {}", fib(15));
+    println("factorial(6) = {}", factorial(6));
+    println("isqrt(100) = {}", isqrt(100));
+    println("isqrt(150) = {}", isqrt(150));
+    println("=== Module Demo Complete ===");
+}

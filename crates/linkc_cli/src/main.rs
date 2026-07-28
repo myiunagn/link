@@ -141,6 +141,9 @@ fn run_compile(args: &[String]) -> Result<(), String> {
     let mut parser = linkc_parser::Parser::new(tokens);
     let program = parser.parse_program()?;
 
+    // 模块系统: 处理 use 声明,加载并合并依赖模块的 AST
+    let program = load_modules(program, input_path)?;
+
     let errors = linkc_sema::check_program(&program);
     if !errors.is_empty() {
         for err in &errors {
@@ -332,6 +335,119 @@ fn print_result(val: &linkc_interpreter::Value) {
     }
 }
 
+/// 模块系统: 处理 use 声明,加载并合并依赖模块的 AST
+///
+/// 模块解析规则(v0.1):
+/// - `use foo::bar;` 在入口文件所在目录查找 `foo/bar.link` 或 `foo/bar/mod.link`
+/// - 被导入模块的顶层 fn/struct/enum 声明被合并到主程序的顶层
+/// - 被导入模块自身的 `use` 也会被递归加载(深度优先,检测循环)
+/// - `use foo::bar as baz;` 暂不重命名(仅记录元数据),baz 作为别名留待后续
+fn load_modules(program: linkc_parser::Program, entry_path: &str) -> Result<linkc_parser::Program, String> {
+    use linkc_parser::{Program as P, Stmt};
+    use std::collections::HashSet;
+    use std::path::{Path, PathBuf};
+
+    let entry_dir = Path::new(entry_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+
+    fn find_module(base: &Path, path: &[String]) -> Option<PathBuf> {
+        // 尝试 base/path1/path2.../last.link
+        let mut p = base.to_path_buf();
+        for seg in &path[..path.len() - 1] {
+            p.push(seg);
+        }
+        let last = path.last().unwrap();
+        // 1. base/.../last.link
+        let f1 = p.join(format!("{}.link", last));
+        if f1.exists() {
+            return Some(f1);
+        }
+        // 2. base/.../last/mod.link
+        let f2 = p.join(last).join("mod.link");
+        if f2.exists() {
+            return Some(f2);
+        }
+        // 3. base/.../last/link (无扩展名)
+        let f3 = p.join(last);
+        if f3.exists() && f3.is_file() {
+            return Some(f3);
+        }
+        None
+    }
+
+    fn load_recursive(
+        path: &Path,
+        loaded: &mut HashSet<PathBuf>,
+        entry_dir: &Path,
+    ) -> Result<Vec<Stmt>, String> {
+        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if loaded.contains(&canon) {
+            return Ok(Vec::new()); // 已加载,避免循环
+        }
+        loaded.insert(canon.clone());
+
+        let source = fs::read_to_string(path)
+            .map_err(|e| format!("Cannot read module '{}': {}", path.display(), e))?;
+        let tokens = linkc_lexer::lex(&source);
+        let mut parser = linkc_parser::Parser::new(tokens);
+        let sub_program = parser.parse_program()?;
+
+        let P::Block(mut all_stmts) = sub_program;
+        let mut merged = Vec::new();
+
+        // 模块自身的 use 声明先递归加载
+        let mut deferred = Vec::new();
+        for stmt in all_stmts.drain(..) {
+            match &stmt {
+                Stmt::UseDecl { path: p, .. } => {
+                    if let Some(module_file) = find_module(entry_dir, p) {
+                        let sub_stmts = load_recursive(&module_file, loaded, entry_dir)?;
+                        merged.extend(sub_stmts);
+                    } else {
+                        eprintln!("warning: module '{}' not found, skipped", p.join("::"));
+                    }
+                }
+                _ => deferred.push(stmt),
+            }
+        }
+        merged.extend(deferred);
+        Ok(merged)
+    }
+
+    let P::Block(mut stmts) = program;
+    let mut merged = Vec::new();
+    let mut loaded: HashSet<PathBuf> = HashSet::new();
+
+    // 入口文件标记为已加载,避免重复
+    let entry_canon = Path::new(entry_path)
+        .canonicalize()
+        .unwrap_or_else(|_| Path::new(entry_path).to_path_buf());
+    loaded.insert(entry_canon);
+
+    // 第一遍: 收集 use 声明并加载模块,延迟其他语句
+    let mut deferred = Vec::new();
+    for stmt in stmts.drain(..) {
+        match &stmt {
+            Stmt::UseDecl { path: p, .. } => {
+                if let Some(module_file) = find_module(&entry_dir, p) {
+                    let sub_stmts = load_recursive(&module_file, &mut loaded, &entry_dir)?;
+                    merged.extend(sub_stmts);
+                } else {
+                    eprintln!("warning: module '{}' not found, skipped", p.join("::"));
+                }
+                // use 声明本身保留(作为元数据,代码生成器会忽略)
+                merged.push(stmt);
+            }
+            _ => deferred.push(stmt),
+        }
+    }
+    merged.extend(deferred);
+
+    Ok(P::Block(merged))
+}
+
 fn run_file(filename: &str) -> Result<(), String> {
     let source = fs::read_to_string(filename)
         .map_err(|e| format!("Cannot read file '{}': {}", filename, e))?;
@@ -340,9 +456,22 @@ fn run_file(filename: &str) -> Result<(), String> {
     let mut parser = linkc_parser::Parser::new(tokens);
     let program = parser.parse_program()?;
 
+    // 模块系统: 处理 use 声明
+    let program = load_modules(program, filename)?;
+
     let mut env = linkc_interpreter::Environment::new();
     let mut ctx = linkc_interpreter::InterpContext::new();
-    let result = linkc_interpreter::eval_program(&program, &mut env, &mut ctx)?;
+    let _ = linkc_interpreter::eval_program(&program, &mut env, &mut ctx)?;
+
+    // 自动调用 main 函数(如果存在)
+    let result = match env.get("main") {
+        Ok(linkc_interpreter::Value::Function { body, params, .. }) if params.is_empty() => {
+            let mut main_env = linkc_interpreter::Environment::extend(env.clone());
+            linkc_interpreter::eval_block(&body.stmts, &mut main_env, &mut ctx)?
+        }
+        Ok(other) => other,
+        Err(_) => linkc_interpreter::Value::None,
+    };
 
     match result {
         linkc_interpreter::Value::Int(n) => println!("{}", n),
