@@ -411,7 +411,7 @@ impl CBackend {
                 for item in items {
                     init_exprs.push(self.generate_expr(item)?);
                 }
-                Ok(format!("((LinkList){{ .count = {}, .items = (int64_t[]){{ {} }} }})", count, init_exprs.join(", ")))
+                Ok(format!("((LinkList){{ .count = {}, .items = {{ {} }} }})", count, init_exprs.join(", ")))
             }
             Expr::Index { target, index } => {
                 let target_str = self.generate_expr(target)?;
@@ -974,6 +974,7 @@ pub fn compile_to_native_with_opts(
         _ => {
             // gcc / clang / cc style
             let mut cmd = std::process::Command::new(&compiler_info.path);
+            cmd.arg("-std=c99");
             cmd.arg(&c_path);
             cmd.arg("-o");
             cmd.arg(output_path);
