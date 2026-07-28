@@ -78,7 +78,7 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  -o <path>           Output path (default: input file stem)");
-    println!("  --backend <type>    Codegen backend: c (default) | llvm");
+    println!("  --backend <type>    Codegen backend: c (default) | llvm | python");
     println!("  --emit-c            Emit C code (C backend only)");
     println!("  --emit-ir           Emit LLVM IR (LLVM backend only)");
     println!("  --opt-level <N>     Optimization level: 0-3 (default: 2)");
@@ -121,7 +121,7 @@ fn run_compile(args: &[String]) -> Result<(), String> {
             "--backend" => {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--backend requires a value (c | llvm)".to_string());
+                    return Err("--backend requires a value (c | llvm | python)".to_string());
                 }
                 backend = args[i].clone();
             }
@@ -183,6 +183,7 @@ fn run_compile(args: &[String]) -> Result<(), String> {
         None => {
             if emit_c { format!("{}.c", stem) }
             else if emit_ir { format!("{}.ll", stem) }
+            else if backend == "python" { format!("{}.py", stem) }
             else { stem.clone() }
         }
     };
@@ -215,8 +216,14 @@ fn run_compile(args: &[String]) -> Result<(), String> {
                 println!("Compiled (LLVM backend): {}", result);
             }
         }
+        "python" | "py" => {
+            let py_code = linkc_codegen::compile_to_python(&program)?;
+            fs::write(&output_path, py_code)
+                .map_err(|e| format!("Cannot write to '{}': {}", output_path, e))?;
+            println!("Generated Python code: {}", output_path);
+        }
         other => {
-            return Err(format!("Unknown backend: '{}' (supported: c, llvm)", other));
+            return Err(format!("Unknown backend: '{}' (supported: c, llvm, python)", other));
         }
     }
 

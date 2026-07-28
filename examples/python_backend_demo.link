@@ -1,0 +1,63 @@
+// Python 后端编译示例
+// 编译: link compile examples/python_backend_demo.link --backend python -o examples/python_backend_demo.py
+
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+    RGB(i64, i64, i64),
+}
+
+fn add(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+fn fib(n: i64) -> i64 {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn main() {
+    let x = 42;
+    let y = 3.14;
+    let s = "hello";
+    let b = true;
+    let xs = [1, 2, 3, 4, 5];
+
+    println("=== Link -> Python Demo ===");
+    println("x = {}", x);
+    println("y = {}", y);
+    println("s = {}", s);
+    println("b = {}", b);
+    println("xs = {}", xs);
+
+    let sum = add(3, 7);
+    println("add(3, 7) = {}", sum);
+
+    let result = fib(10);
+    println("fib(10) = {}", result);
+
+    let p = Point { x: 1.0, y: 2.0 };
+    println("point x = {}, y = {}", p.x, p.y);
+
+    let c = Color::Red;
+    match c {
+        Color::Red => { println("red"); }
+        Color::Green => { println("green"); }
+        Color::Blue => { println("blue"); }
+        _ => { println("other"); }
+    }
+
+    let total = 0;
+    for i in 0..10 {
+        total = total + i;
+    }
+    println("sum 0..10 = {}", total);
+}

@@ -930,6 +930,703 @@ impl CodeGenerator for CBackend {
     }
 }
 
+// ===== Python 后端 =====
+
+pub struct PythonBackend {
+    indent: usize,
+    functions: Vec<String>,
+    classes: Vec<String>,
+    var_map: HashMap<String, String>,
+    struct_map: HashMap<String, Vec<(String, String)>>,
+    enum_map: HashMap<String, Vec<(String, usize)>>,
+    tmp_counter: usize,
+    has_main: bool,
+}
+
+impl PythonBackend {
+    pub fn new() -> Self {
+        Self {
+            indent: 0,
+            functions: Vec::new(),
+            classes: Vec::new(),
+            var_map: HashMap::new(),
+            struct_map: HashMap::new(),
+            enum_map: HashMap::new(),
+            tmp_counter: 0,
+            has_main: false,
+        }
+    }
+
+    fn indent_str(&self) -> String {
+        "    ".repeat(self.indent)
+    }
+
+    fn fresh_tmp(&mut self) -> String {
+        self.tmp_counter += 1;
+        format!("_tmp{}", self.tmp_counter)
+    }
+
+    fn py_type(type_ann: &TypeAnnotation) -> String {
+        match type_ann {
+            TypeAnnotation::I8 | TypeAnnotation::I16 | TypeAnnotation::I32 | TypeAnnotation::I64
+            | TypeAnnotation::U8 | TypeAnnotation::U16 | TypeAnnotation::U32 | TypeAnnotation::U64
+            | TypeAnnotation::USize => "int".to_string(),
+            TypeAnnotation::F32 | TypeAnnotation::F64 => "float".to_string(),
+            TypeAnnotation::Bool => "bool".to_string(),
+            TypeAnnotation::Str | TypeAnnotation::Void => "str".to_string(),
+            TypeAnnotation::Unit => "None".to_string(),
+            TypeAnnotation::Named(n) => n.clone(),
+            TypeAnnotation::Ptr(_) => "Any".to_string(),
+            TypeAnnotation::Stream(_) => "list".to_string(),
+        }
+    }
+
+    fn generate_expr(&mut self, expr: &Expr) -> Result<String, String> {
+        match expr {
+            Expr::Int(n) => Ok(n.to_string()),
+            Expr::Float(f) => {
+                let s = format!("{}", f);
+                if s.contains('.') || s.contains('e') || s.contains('E') {
+                    Ok(s)
+                } else {
+                    Ok(format!("{}.0", s))
+                }
+            }
+            Expr::Str(s) => {
+                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+                Ok(format!("\"{}\"", escaped))
+            }
+            Expr::Bool(b) => Ok(if *b { "True" } else { "False" }.to_string()),
+            Expr::None => Ok("None".to_string()),
+            Expr::Ident(name) => {
+                if let Some(py_name) = self.var_map.get(name) {
+                    Ok(py_name.clone())
+                } else {
+                    Ok(name.clone())
+                }
+            }
+            Expr::Binary { op, left, right } => {
+                let left_str = self.generate_expr(left)?;
+                let right_str = self.generate_expr(right)?;
+                let op_str = match op {
+                    BinOp::Add => "+",
+                    BinOp::Sub => "-",
+                    BinOp::Mul => "*",
+                    BinOp::Div => "/",
+                    BinOp::Mod => "%",
+                    BinOp::Eq => "==",
+                    BinOp::Neq => "!=",
+                    BinOp::Lt => "<",
+                    BinOp::Gt => ">",
+                    BinOp::LtEq => "<=",
+                    BinOp::GtEq => ">=",
+                    BinOp::And => "and",
+                    BinOp::Or => "or",
+                    BinOp::Pipe => return Err("pipe operator not supported in Python backend".to_string()),
+                };
+                Ok(format!("({} {} {})", left_str, op_str, right_str))
+            }
+            Expr::Unary { op, operand } => {
+                let operand_str = self.generate_expr(operand)?;
+                match op {
+                    UnaryOp::Neg => Ok(format!("(-{})", operand_str)),
+                    UnaryOp::Not => Ok(format!("(not {})", operand_str)),
+                }
+            }
+            Expr::Call { callee, args } => {
+                match callee.as_str() {
+                    "print" => {
+                        let mut arg_strs = Vec::new();
+                        for arg in args {
+                            arg_strs.push(self.generate_expr(arg)?);
+                        }
+                        Ok(format!("print({})", arg_strs.join(", ")))
+                    }
+                    "println" => {
+                        if args.is_empty() {
+                            Ok("print()".to_string())
+                        } else if args.len() >= 2 {
+                            if let Expr::Str(fmt) = &args[0] {
+                                if fmt.contains("{}") {
+                                    let mut parts = Vec::new();
+                                    let mut arg_idx = 1;
+                                    for ch in fmt.chars() {
+                                        if ch == '{' && arg_idx < args.len() {
+                                            // peek next char
+                                            parts.push("{}".to_string());
+                                            arg_idx += 1;
+                                        } else if ch == '}' && arg_idx > 1 {
+                                            // already consumed
+                                        } else {
+                                            // push as string literal char
+                                            if let Some(last) = parts.last_mut() {
+                                                if last.starts_with("'") || last.starts_with("\"") {
+                                                    last.pop();
+                                                    last.push(ch);
+                                                    last.push('"');
+                                                } else {
+                                                    parts.push(format!("'{}'", ch));
+                                                }
+                                            } else {
+                                                parts.push(format!("'{}'", ch));
+                                            }
+                                        }
+                                    }
+                                    // Simplified: use f-string
+                                    let mut fstr = fmt.clone();
+                                    let mut arg_exprs = Vec::new();
+                                    let mut arg_i = 1;
+                                    while fstr.contains("{}") && arg_i < args.len() {
+                                        let expr_str = self.generate_expr(&args[arg_i])?;
+                                        fstr = fstr.replacen("{}", "{}", 1);
+                                        arg_exprs.push(expr_str);
+                                        arg_i += 1;
+                                    }
+                                    let escaped_fmt = fstr.replace('\\', "\\\\").replace('"', "\\\"");
+                                    if arg_exprs.is_empty() {
+                                        Ok(format!("print(\"{}\")", escaped_fmt))
+                                    } else {
+                                        Ok(format!("print(\"{}\".format({}))", escaped_fmt, arg_exprs.join(", ")))
+                                    }
+                                } else {
+                                    let mut arg_strs = Vec::new();
+                                    for arg in args {
+                                        arg_strs.push(self.generate_expr(arg)?);
+                                    }
+                                    Ok(format!("print({})", arg_strs.join(", ")))
+                                }
+                            } else {
+                                let mut arg_strs = Vec::new();
+                                for arg in args {
+                                    arg_strs.push(self.generate_expr(arg)?);
+                                }
+                                Ok(format!("print({})", arg_strs.join(", ")))
+                            }
+                        } else {
+                            let arg_str = self.generate_expr(&args[0])?;
+                            Ok(format!("print({})", arg_str))
+                        }
+                    }
+                    "len" => {
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("len({})", arg_str))
+                    }
+                    "sleep" => {
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("time.sleep({} / 1000.0)", arg_str))
+                    }
+                    "abs" => {
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("abs({})", arg_str))
+                    }
+                    "min" => {
+                        let mut arg_strs = Vec::new();
+                        for arg in args { arg_strs.push(self.generate_expr(arg)?); }
+                        Ok(format!("min({})", arg_strs.join(", ")))
+                    }
+                    "max" => {
+                        let mut arg_strs = Vec::new();
+                        for arg in args { arg_strs.push(self.generate_expr(arg)?); }
+                        Ok(format!("max({})", arg_strs.join(", ")))
+                    }
+                    "sqrt" => {
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("math.sqrt({})", arg_str))
+                    }
+                    "str_upper" => {
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("{}.upper()", arg_str))
+                    }
+                    "str_lower" => {
+                        let arg_str = self.generate_expr(&args[0])?;
+                        Ok(format!("{}.lower()", arg_str))
+                    }
+                    _ => {
+                        let mut arg_strs = Vec::new();
+                        for arg in args {
+                            arg_strs.push(self.generate_expr(arg)?);
+                        }
+                        Ok(format!("{}({})", callee, arg_strs.join(", ")))
+                    }
+                }
+            }
+            Expr::IfExpr { condition, then_value, else_value } => {
+                let cond_str = self.generate_expr(condition)?;
+                let then_str = self.generate_expr(then_value)?;
+                let else_str = self.generate_expr(else_value)?;
+                Ok(format!("({} if {} else {})", then_str, cond_str, else_str))
+            }
+            Expr::List(items) => {
+                let mut item_strs = Vec::new();
+                for item in items {
+                    item_strs.push(self.generate_expr(item)?);
+                }
+                Ok(format!("[{}]", item_strs.join(", ")))
+            }
+            Expr::Index { target, index } => {
+                let target_str = self.generate_expr(target)?;
+                let index_str = self.generate_expr(index)?;
+                Ok(format!("{}[{}]", target_str, index_str))
+            }
+            Expr::BlockExpr(block) => {
+                // Python 不支持块表达式，用立即调用 lambda 模拟
+                let _tmp = self.fresh_tmp();
+                let saved_indent = self.indent;
+                self.indent = 1;
+                let mut body_lines = Vec::new();
+                for stmt in &block.stmts {
+                    let lines = self.generate_stmt(stmt)?;
+                    body_lines.extend(lines);
+                }
+                self.indent = saved_indent;
+                // 简化：返回最后一条表达式的值
+                if let Some(Stmt::Expr(last_expr)) = block.stmts.last() {
+                    let last_str = self.generate_expr(last_expr)?;
+                    body_lines.pop();
+                    body_lines.push(format!("    return {}", last_str));
+                } else {
+                    body_lines.push("    return None".to_string());
+                }
+                Ok(format!("(lambda: (\n{}\n))()", body_lines.join("\n")))
+            }
+            Expr::StructInit { name, fields } => {
+                let mut field_strs = Vec::new();
+                for (fname, fval) in fields {
+                    let val_str = self.generate_expr(fval)?;
+                    field_strs.push(format!("{}={}", fname, val_str));
+                }
+                Ok(format!("{}({})", name, field_strs.join(", ")))
+            }
+            Expr::FieldAccess { target, field } => {
+                let target_str = self.generate_expr(target)?;
+                Ok(format!("{}.{}", target_str, field))
+            }
+            Expr::Path { base, segment } => {
+                // 枚举无参变体: Type::Variant -> Type.Variant
+                Ok(format!("{}.{}", base, segment))
+            }
+            Expr::PathCall { base, segment, args } => {
+                // 枚举带参变体: Type::Variant(args) -> Type.Variant(args)
+                let mut arg_strs = Vec::new();
+                for arg in args {
+                    arg_strs.push(self.generate_expr(arg)?);
+                }
+                Ok(format!("{}.{}({})", base, segment, arg_strs.join(", ")))
+            }
+            Expr::MatchExpr { scrutinee, arms } => {
+                // 生成嵌套的 if-elif-else 表达式
+                let scrut_str = self.generate_expr(scrutinee)?;
+                let tmp = self.fresh_tmp();
+                self.var_map.insert(tmp.clone(), tmp.clone());
+                let mut result = format!("(lambda {tmp}: ");
+                let mut first = true;
+                for arm in arms {
+                    let body_str = self.generate_block_return(&arm.body)?;
+                    match &arm.pattern {
+                        Pattern::Wildcard => {
+                            result.push_str(&body_str);
+                        }
+                        Pattern::Literal(expr) => {
+                            let lit_str = self.generate_expr(expr)?;
+                            if first {
+                                result.push_str(&format!("{} if {tmp} == {} else ", body_str, lit_str));
+                            } else {
+                                result.push_str(&format!("{} if {tmp} == {} else ", body_str, lit_str));
+                            }
+                        }
+                        Pattern::Bind(name) => {
+                            self.var_map.insert(name.clone(), tmp.clone());
+                            result.push_str(&body_str);
+                        }
+                        Pattern::EnumVariant { type_name, variant } => {
+                            let var_name = format!("{}.{}", type_name, variant);
+                            if first {
+                                result.push_str(&format!("{} if {tmp} == {} else ", body_str, var_name));
+                            } else {
+                                result.push_str(&format!("{} if {tmp} == {} else ", body_str, var_name));
+                            }
+                        }
+                        Pattern::EnumVariantWithPayload { variant, .. } => {
+                            result.push_str(&format!("{} if isinstance({tmp}, tuple) and {tmp}[0] == '{}' else ", body_str, variant));
+                        }
+                    }
+                    first = false;
+                }
+                if first {
+                    result.push_str("None");
+                }
+                result.push_str(&format!(")({})", scrut_str));
+                Ok(result)
+            }
+            Expr::Await(inner) => {
+                let inner_str = self.generate_expr(inner)?;
+                Ok(format!("await {}", inner_str))
+            }
+        }
+    }
+
+    fn generate_block_return(&mut self, block: &Block) -> Result<String, String> {
+        // 生成块的最后一条表达式作为返回值
+        if let Some(Stmt::Expr(last_expr)) = block.stmts.last() {
+            self.generate_expr(last_expr)
+        } else if let Some(Stmt::Return(Some(expr))) = block.stmts.last() {
+            self.generate_expr(expr)
+        } else {
+            Ok("None".to_string())
+        }
+    }
+
+    fn generate_stmt(&mut self, stmt: &Stmt) -> Result<Vec<String>, String> {
+        let mut lines = Vec::new();
+
+        match stmt {
+            Stmt::LetDecl { name, value, .. } => {
+                let py_name = name.clone();
+                self.var_map.insert(name.clone(), py_name.clone());
+                if let Some(val) = value {
+                    let val_str = self.generate_expr(val)?;
+                    lines.push(format!("{}{} = {}", self.indent_str(), py_name, val_str));
+                } else {
+                    lines.push(format!("{}{} = None", self.indent_str(), py_name));
+                }
+            }
+            Stmt::Assign { target, value } => {
+                let val_str = self.generate_expr(value)?;
+                let py_name = self.var_map.get(target).cloned().unwrap_or_else(|| target.clone());
+                lines.push(format!("{}{} = {}", self.indent_str(), py_name, val_str));
+            }
+            Stmt::Expr(expr) => {
+                let expr_str = self.generate_expr(expr)?;
+                lines.push(format!("{}{}", self.indent_str(), expr_str));
+            }
+            Stmt::Return(Some(expr)) => {
+                let expr_str = self.generate_expr(expr)?;
+                lines.push(format!("{}return {}", self.indent_str(), expr_str));
+            }
+            Stmt::Return(None) => {
+                lines.push(format!("{}return None", self.indent_str()));
+            }
+            Stmt::If { condition, then_branch, else_branch } => {
+                let cond_str = self.generate_expr(condition)?;
+                lines.push(format!("{}if {}:", self.indent_str(), cond_str));
+                self.indent += 1;
+                if then_branch.stmts.is_empty() {
+                    lines.push(format!("{}pass", self.indent_str()));
+                } else {
+                    let then_lines = self.generate_block_lines(then_branch)?;
+                    lines.extend(then_lines);
+                }
+                self.indent -= 1;
+
+                if let Some(else_block) = else_branch {
+                    lines.push(format!("{}else:", self.indent_str()));
+                    self.indent += 1;
+                    if else_block.stmts.is_empty() {
+                        lines.push(format!("{}pass", self.indent_str()));
+                    } else {
+                        let else_lines = self.generate_block_lines(else_block)?;
+                        lines.extend(else_lines);
+                    }
+                    self.indent -= 1;
+                }
+            }
+            Stmt::While { condition, body } => {
+                let cond_str = self.generate_expr(condition)?;
+                lines.push(format!("{}while {}:", self.indent_str(), cond_str));
+                self.indent += 1;
+                if body.stmts.is_empty() {
+                    lines.push(format!("{}pass", self.indent_str()));
+                } else {
+                    let body_lines = self.generate_block_lines(body)?;
+                    lines.extend(body_lines);
+                }
+                self.indent -= 1;
+            }
+            Stmt::For { var_name, start, end, body } => {
+                let start_str = self.generate_expr(start)?;
+                let end_str = self.generate_expr(end)?;
+                let py_name = var_name.clone();
+                self.var_map.insert(var_name.clone(), py_name.clone());
+                lines.push(format!("{}for {} in range({}, {}):", self.indent_str(), py_name, start_str, end_str));
+                self.indent += 1;
+                if body.stmts.is_empty() {
+                    lines.push(format!("{}pass", self.indent_str()));
+                } else {
+                    let body_lines = self.generate_block_lines(body)?;
+                    lines.extend(body_lines);
+                }
+                self.indent -= 1;
+            }
+            Stmt::Loop(body) => {
+                lines.push(format!("{}while True:", self.indent_str()));
+                self.indent += 1;
+                let body_lines = self.generate_block_lines(body)?;
+                lines.extend(body_lines);
+                self.indent -= 1;
+            }
+            Stmt::Break => {
+                lines.push(format!("{}break", self.indent_str()));
+            }
+            Stmt::Continue => {
+                lines.push(format!("{}continue", self.indent_str()));
+            }
+            Stmt::FnDecl { name, params, return_type: _, body, is_async } => {
+                if name == "main" {
+                    self.has_main = true;
+                }
+                let mut param_strs = Vec::new();
+                let mut fn_var_map = HashMap::new();
+                for (pname, _) in params {
+                    param_strs.push(pname.clone());
+                    fn_var_map.insert(pname.clone(), pname.clone());
+                }
+                let saved_var_map = std::mem::replace(&mut self.var_map, fn_var_map);
+                let saved_indent = self.indent;
+                self.indent = 1;
+
+                let body_lines = self.generate_block_lines(body)?;
+
+                self.var_map = saved_var_map;
+                self.indent = saved_indent;
+
+                let prefix = if *is_async { "async " } else { "" };
+                let mut fn_code = format!("{}def {}({}):\n", prefix, name, param_strs.join(", "));
+                if body_lines.is_empty() {
+                    fn_code.push_str("    pass\n");
+                } else {
+                    for line in &body_lines {
+                        fn_code.push_str(line);
+                        fn_code.push('\n');
+                    }
+                }
+                self.functions.push(fn_code);
+            }
+            Stmt::StructDecl { name, fields } => {
+                let mut field_names = Vec::new();
+                for field in fields {
+                    field_names.push((field.name.clone(), Self::py_type(&field.type_ann)));
+                }
+                self.struct_map.insert(name.clone(), field_names.clone());
+
+                let mut class_code = format!("class {}:\n", name);
+                class_code.push_str("    def __init__(self");
+                for (fname, _) in &field_names {
+                    class_code.push_str(&format!(", {}", fname));
+                }
+                class_code.push_str("):\n");
+                if field_names.is_empty() {
+                    class_code.push_str("        pass\n");
+                } else {
+                    for (fname, _) in &field_names {
+                        class_code.push_str(&format!("        self.{} = {}\n", fname, fname));
+                    }
+                }
+                class_code.push_str(&format!("    def __repr__(self):\n"));
+                if field_names.is_empty() {
+                    class_code.push_str(&format!("        return \"{}()\"\n", name));
+                } else {
+                    let field_repr: Vec<String> = field_names.iter()
+                        .map(|(f, _)| format!("\"{}=\" + str(self.{})", f, f))
+                        .collect();
+                    class_code.push_str(&format!("        return \"{}(\" + {} + \")\"\n", name, field_repr.join(" + \", \" + ")));
+                }
+                self.classes.push(class_code);
+            }
+            Stmt::EnumDecl { name, variants } => {
+                let mut variant_info = Vec::new();
+                for (i, variant) in variants.iter().enumerate() {
+                    variant_info.push((variant.name.clone(), i));
+                }
+                self.enum_map.insert(name.clone(), variant_info.clone());
+
+                let mut class_code = format!("class {}:\n", name);
+                for (vname, _) in &variant_info {
+                    if variants.iter().find(|v| &v.name == vname).map_or(false, |v| !v.payload.is_empty()) {
+                        // 带参数的变体: 返回元组
+                        class_code.push_str(&format!("    @staticmethod\n"));
+                        class_code.push_str(&format!("    def {}(*args):\n", vname));
+                        class_code.push_str(&format!("        return (\"{}\", args)\n", vname));
+                    } else {
+                        class_code.push_str(&format!("    {} = \"{}\"\n", vname, vname));
+                    }
+                }
+                self.classes.push(class_code);
+            }
+            Stmt::Match { scrutinee, arms } => {
+                let tmp = self.fresh_tmp();
+                let scrut_str = self.generate_expr(scrutinee)?;
+                self.var_map.insert(tmp.clone(), tmp.clone());
+                lines.push(format!("{}{} = {}", self.indent_str(), tmp, scrut_str));
+
+                let mut first = true;
+                for arm in arms {
+                    let cond_str = match &arm.pattern {
+                        Pattern::Wildcard => None,
+                        Pattern::Literal(expr) => {
+                            let lit_str = self.generate_expr(expr)?;
+                            Some(format!("{} == {}", tmp, lit_str))
+                        }
+                        Pattern::Bind(name) => {
+                            self.var_map.insert(name.clone(), tmp.clone());
+                            None
+                        }
+                        Pattern::EnumVariant { type_name, variant } => {
+                            Some(format!("{} == {}.{}", tmp, type_name, variant))
+                        }
+                        Pattern::EnumVariantWithPayload { variant, bindings, .. } => {
+                            for (i, binding) in bindings.iter().enumerate() {
+                                if binding != "_" {
+                                    self.var_map.insert(binding.clone(), format!("{}[1][{}]", tmp, i));
+                                }
+                            }
+                            let cond = format!("isinstance({}, tuple) and {}[0] == \"{}\"", tmp, tmp, variant);
+                            Some(cond)
+                        }
+                    };
+
+                    if first {
+                        match cond_str {
+                            Some(c) => lines.push(format!("{}if {}:", self.indent_str(), c)),
+                            None => {
+                                lines.push(format!("{}if True:", self.indent_str()));
+                                self.indent += 1;
+                                let arm_lines = self.generate_block_lines(&arm.body)?;
+                                if arm_lines.is_empty() {
+                                    lines.push(format!("{}pass", self.indent_str()));
+                                } else {
+                                    lines.extend(arm_lines);
+                                }
+                                self.indent -= 1;
+                                first = false;
+                                continue;
+                            }
+                        }
+                        first = false;
+                    } else {
+                        match cond_str {
+                            Some(c) => lines.push(format!("{}elif {}:", self.indent_str(), c)),
+                            None => {
+                                lines.push(format!("{}else:", self.indent_str()));
+                                self.indent += 1;
+                                let arm_lines = self.generate_block_lines(&arm.body)?;
+                                if arm_lines.is_empty() {
+                                    lines.push(format!("{}pass", self.indent_str()));
+                                } else {
+                                    lines.extend(arm_lines);
+                                }
+                                self.indent -= 1;
+                                continue;
+                            }
+                        }
+                    }
+                    self.indent += 1;
+                    let arm_lines = self.generate_block_lines(&arm.body)?;
+                    if arm_lines.is_empty() {
+                        lines.push(format!("{}pass", self.indent_str()));
+                    } else {
+                        lines.extend(arm_lines);
+                    }
+                    self.indent -= 1;
+                }
+                if first {
+                    lines.push(format!("{}pass", self.indent_str()));
+                }
+            }
+            Stmt::ExternDecl { .. } => {
+                // extern 声明在 Python 中忽略
+            }
+            Stmt::ExportDecl { .. } => {}
+            Stmt::FlowDecl { .. } => {
+                return Err("flow not supported in Python backend".to_string());
+            }
+            Stmt::DomainDecl { .. } => {
+                // domain 声明在 Python 中生成字典
+            }
+            Stmt::ModDecl { .. } | Stmt::UseDecl { .. } => {
+                // 模块/导入声明忽略
+            }
+        }
+
+        Ok(lines)
+    }
+
+    fn generate_block_lines(&mut self, block: &Block) -> Result<Vec<String>, String> {
+        let mut lines = Vec::new();
+        for stmt in &block.stmts {
+            let stmt_lines = self.generate_stmt(stmt)?;
+            lines.extend(stmt_lines);
+        }
+        Ok(lines)
+    }
+
+    fn generate_program(&mut self, program: &Program) -> Result<String, String> {
+        let Program::Block(stmts) = program;
+
+        let mut main_body_lines = Vec::new();
+        let mut has_toplevel_code = false;
+
+        for stmt in stmts {
+            match stmt {
+                Stmt::FnDecl { .. } | Stmt::StructDecl { .. } | Stmt::EnumDecl { .. }
+                | Stmt::ExternDecl { .. } | Stmt::ExportDecl { .. }
+                | Stmt::FlowDecl { .. } | Stmt::DomainDecl { .. }
+                | Stmt::ModDecl { .. } | Stmt::UseDecl { .. } => {
+                    self.generate_stmt(stmt)?;
+                }
+                _ => {
+                    has_toplevel_code = true;
+                    let saved_indent = self.indent;
+                    self.indent = 1;
+                    let lines = self.generate_stmt(stmt)?;
+                    self.indent = saved_indent;
+                    main_body_lines.extend(lines);
+                }
+            }
+        }
+
+        let mut output = String::new();
+        output.push_str("#!/usr/bin/env python3\n");
+        output.push_str("# Generated by Link compiler - Python backend\n");
+        output.push_str("import math\n");
+        output.push_str("import time\n");
+        output.push_str("\n");
+
+        for class in &self.classes {
+            output.push_str(class);
+            output.push('\n');
+        }
+
+        for func in &self.functions {
+            output.push_str(func);
+            output.push('\n');
+        }
+
+        if has_toplevel_code && !self.has_main {
+            output.push_str("\nif __name__ == \"__main__\":\n");
+            for line in &main_body_lines {
+                output.push_str(line);
+                output.push('\n');
+            }
+        } else if self.has_main {
+            output.push_str("\nif __name__ == \"__main__\":\n");
+            output.push_str("    main()\n");
+        }
+
+        Ok(output)
+    }
+}
+
+impl CodeGenerator for PythonBackend {
+    fn generate(&mut self, program: &Program) -> Result<String, String> {
+        self.generate_program(program)
+    }
+}
+
+pub fn compile_to_python(program: &Program) -> Result<String, String> {
+    let mut backend = PythonBackend::new();
+    backend.generate(program)
+}
+
 pub fn compile_to_c(program: &Program) -> Result<String, String> {
     let mut backend = CBackend::new_with_defaults();
     backend.generate(program)
@@ -1308,5 +2005,152 @@ mod tests {
         // This is a smoke test - we can't guarantee compiler availability,
         // but the function should not panic
         let _ = detect_c_compiler();
+    }
+
+    // ===== Python backend tests =====
+
+    #[test]
+    fn test_py_int_literal() {
+        let program = parse("42");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("42"));
+        assert!(code.contains("__main__"));
+    }
+
+    #[test]
+    fn test_py_binary_add() {
+        let program = parse("1 + 2");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("(1 + 2)"));
+    }
+
+    #[test]
+    fn test_py_function() {
+        let program = parse("fn add(a: i64, b: i64) -> i64 { return a + b; }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("def add(a, b):"));
+        assert!(code.contains("return (a + b)"));
+    }
+
+    #[test]
+    fn test_py_if_else() {
+        let program = parse("fn abs(x: i64) -> i64 { if x < 0 { return -x; } else { return x; } }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("if (x < 0):"));
+        assert!(code.contains("else:"));
+        assert!(code.contains("return (-x)"));
+    }
+
+    #[test]
+    fn test_py_while_loop() {
+        let program = parse("fn count(n: i64) -> i64 { let i = 0; while i < n { i = i + 1; } return i; }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("while"));
+        assert!(code.contains("(i < n)"));
+    }
+
+    #[test]
+    fn test_py_for_loop() {
+        let program = parse("fn sum(n: i64) -> i64 { let s = 0; for i in 0..n { s = s + i; } return s; }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("for i in range(0, n):"));
+    }
+
+    #[test]
+    fn test_py_let_decl() {
+        let program = parse("let x = 42; x");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("x = 42"));
+    }
+
+    #[test]
+    fn test_py_struct() {
+        let program = parse("struct Point { x: i32, y: i32 } let p = Point { x: 1, y: 2 }; p.x");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("class Point:"));
+        assert!(code.contains("def __init__(self, x, y):"));
+        assert!(code.contains("self.x = x"));
+    }
+
+    #[test]
+    fn test_py_list() {
+        let program = parse("let xs = [1, 2, 3]; xs[0]");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("[1, 2, 3]"));
+    }
+
+    #[test]
+    fn test_py_enum() {
+        let program = parse("enum Color { Red, Green, Blue } let c = Color::Red; c");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("class Color:"));
+        assert!(code.contains("Color.Red"));
+    }
+
+    #[test]
+    fn test_py_match() {
+        let program = parse("fn test(x: i64) -> i64 { match x { 1 => { return 10; } 2 => { return 20; } _ => { return 0; } } }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("if") || code.contains("elif"));
+    }
+
+    #[test]
+    fn test_py_println_format() {
+        let program = parse("fn main() { println(\"val = {}\", 42); }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("print("));
+        assert!(code.contains("format"));
+    }
+
+    #[test]
+    fn test_py_println_plain() {
+        let program = parse("fn main() { println(\"hello\"); }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("print(\"hello\")"));
+    }
+
+    #[test]
+    fn test_py_main_function() {
+        let program = parse("fn main() { println(\"hello world\"); }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("def main():"));
+        assert!(code.contains("__main__"));
+        assert!(code.contains("main()"));
+    }
+
+    #[test]
+    fn test_py_bool_and_none() {
+        let program = parse("fn main() { let b = true; let n = none; }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("True"));
+        assert!(code.contains("None"));
+    }
+
+    #[test]
+    fn test_py_string() {
+        let program = parse("fn main() { let s = \"hello\"; println(s); }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("\"hello\""));
+    }
+
+    #[test]
+    fn test_py_async_fn() {
+        let program = parse("async fn fetch() -> i64 { return 42; }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("async def fetch():"));
+    }
+
+    #[test]
+    fn test_py_logical_ops() {
+        let program = parse("fn test(a: bool, b: bool) -> bool { return a and b; }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("and"));
+    }
+
+    #[test]
+    fn test_py_enum_with_payload() {
+        let program = parse("enum Shape { Circle(f64), Square(f64) } fn main() { let c = Shape::Circle(5.0); c }");
+        let code = compile_to_python(&program).unwrap();
+        assert!(code.contains("Shape.Circle"));
     }
 }
