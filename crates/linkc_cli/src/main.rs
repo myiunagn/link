@@ -3,6 +3,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
+mod game;
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -36,6 +38,17 @@ fn main() {
         run_repl();
     } else if command == "lsp" {
         run_lsp();
+    } else if command == "game" {
+        if args.len() < 3 {
+            eprintln!("Usage: link game <file.link> [domain_name]");
+            process::exit(1);
+        }
+        let filename = &args[2];
+        let domain_name = args.get(3).cloned();
+        if let Err(e) = run_game(filename, domain_name) {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
     } else if command == "--version" || command == "-V" {
         println!("linkc 0.1.0");
     } else if command == "--help" || command == "-h" {
@@ -56,6 +69,7 @@ fn print_help() {
     println!("  repl                    Start interactive REPL");
     println!("  bindgen <args>          Generate bindings from export blocks");
     println!("  lsp                     Start the LSP server on stdio");
+    println!("  game <file> [domain]    Start game backend server from domain config");
     println!("  --version, -V           Print version");
     println!("  --help, -h              Print this help");
     println!();
@@ -303,6 +317,41 @@ fn run_lsp() {
         eprintln!("link lsp error: {}", e);
         process::exit(1);
     }
+}
+
+fn run_game(filename: &str, domain_name: Option<String>) -> Result<(), String> {
+    let source = fs::read_to_string(filename)
+        .map_err(|e| format!("Cannot read '{}': {}", filename, e))?;
+    let tokens = linkc_lexer::lex(&source);
+    let mut parser = linkc_parser::Parser::new(tokens);
+    let program = parser.parse_program()
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    // 解释执行，创建 domain 配置对象
+    let mut env = linkc_interpreter::Environment::new();
+    let mut ctx = linkc_interpreter::InterpContext::new();
+    linkc_interpreter::eval_program(&program, &mut env, &mut ctx)
+        .map_err(|e| format!("Runtime error: {}", e))?;
+
+    // 查找 domain 配置
+    let domain_var = domain_name.as_deref().unwrap_or("GameServer");
+    let domain_val = env.get(domain_var)
+        .map_err(|_| format!("Domain '{}' not found in program. Define it with `domain {} {{ ... }}`", domain_var, domain_var))?;
+
+    let cfg = game::config_from_link(&domain_val)?;
+
+    println!("Starting game server from domain '{}' in '{}'", domain_var, filename);
+
+    // 启动 tokio 运行时和游戏服务器
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+    rt.block_on(async {
+        if let Err(e) = game::run_server(cfg).await {
+            eprintln!("Game server error: {}", e);
+        }
+    });
+
+    Ok(())
 }
 
 fn run_repl() {

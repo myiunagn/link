@@ -126,6 +126,12 @@ pub enum Stmt {
         path: Vec<String>,
         alias: Option<String>,
     },
+    /// 域声明: `domain Name { key: value, ... }`
+    /// 用于定义游戏后端域配置 (tick_rate, max_players, 事件处理函数等)
+    DomainDecl {
+        name: String,
+        config: Vec<(String, Expr)>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -369,6 +375,7 @@ impl Parser {
             Token::Flow => self.parse_flow_decl(),
             Token::Mod => self.parse_mod_decl(),
             Token::Use => self.parse_use_decl(),
+            Token::Domain => self.parse_domain_decl(),
             Token::LeftBrace => {
                 let block = self.parse_block()?;
                 Ok(Stmt::Expr(Expr::BlockExpr(block)))
@@ -1018,6 +1025,45 @@ impl Parser {
         };
         self.expect(Token::Semicolon)?;
         Ok(Stmt::UseDecl { path, alias })
+    }
+
+    /// 解析域声明: `domain Name { key: value, key2: value2 }`
+    fn parse_domain_decl(&mut self) -> Result<Stmt, String> {
+        self.expect(Token::Domain)?;
+        let name = match self.current_token().clone() {
+            Token::Ident(s) => { self.advance(); s }
+            other => return Err(format!("Expected domain name after 'domain', found {}", other)),
+        };
+        self.expect(Token::LeftBrace)?;
+        let mut config = Vec::new();
+        while !self.check(Token::RightBrace) {
+            // 解析 key: value
+            let key = match self.current_token().clone() {
+                Token::Ident(s) => { self.advance(); s }
+                Token::Async | Token::Await | Token::Break | Token::Continue |
+                Token::Else | Token::Enum | Token::Extern | Token::Export |
+                Token::False | Token::Flow | Token::Fn | Token::For |
+                Token::If | Token::In | Token::Let | Token::Loop |
+                Token::Match | Token::Mod | Token::Mut | Token::None |
+                Token::Return | Token::Struct | Token::True | Token::Use |
+                Token::While | Token::Domain | Token::Stream | Token::Source |
+                Token::Pipeline | Token::Sample => {
+                    let s = format!("{}", self.current_token());
+                    self.advance();
+                    s
+                }
+                other => return Err(format!("Expected config key in domain block, found {}", other)),
+            };
+            self.expect(Token::Colon)?;
+            let value = self.parse_expr()?;
+            config.push((key, value));
+            // 可选的逗号或分号分隔
+            if self.check(Token::Comma) || self.check(Token::Semicolon) {
+                self.advance();
+            }
+        }
+        self.expect(Token::RightBrace)?;
+        Ok(Stmt::DomainDecl { name, config })
     }
 
     /// 解析 match 表达式

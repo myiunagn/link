@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Link Game Client Demo</title>
+<style>
+body { margin: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
+#canvas { display: block; background: #1a1a2e; }
+#ui { position: absolute; top: 10px; left: 10px; }
+input, button { padding: 8px; font-size: 14px; }
+#log { position: absolute; bottom: 10px; left: 10px; right: 10px; height: 120px; overflow-y: auto; background: rgba(0,0,0,0.5); padding: 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<canvas id="canvas" width="800" height="600"></canvas>
+<div id="ui">
+  <input id="name" placeholder="Player name" value="player1">
+  <input id="room" placeholder="Room" value="default">
+  <button onclick="connect()">Connect</button>
+  <button onclick="sendChat()">Chat</button>
+  <input id="chat" placeholder="Say something...">
+  <span id="status">Disconnected</span>
+</div>
+<div id="log"></div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let ws = null;
+let playerId = null;
+let state = { players: [], entities: [], frame: 0 };
+let keys = {};
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.innerHTML += msg + '<br>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function connect() {
+  if (ws) ws.close();
+  const name = document.getElementById('name').value || 'player';
+  const room = document.getElementById('room').value || 'default';
+  ws = new WebSocket('ws://localhost:7878');
+  ws.onopen = () => {
+    document.getElementById('status').textContent = 'Connected';
+    ws.send(JSON.stringify({ type: 'join', room, name }));
+    log('Connected to ws://localhost:7878');
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'joined') {
+      playerId = msg.player_id;
+      log('Joined as player ' + playerId + ' in room ' + msg.room);
+    } else if (msg.type === 'state') {
+      state = msg;
+    } else if (msg.type === 'chat') {
+      log('[' + msg.from + '] ' + msg.text);
+    }
+  };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'Disconnected';
+    log('Disconnected');
+  };
+}
+
+function sendChat() {
+  const text = document.getElementById('chat').value;
+  if (ws && text) {
+    ws.send(JSON.stringify({ type: 'chat', text }));
+    document.getElementById('chat').value = '';
+  }
+}
+
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d'].includes(e.key)) e.preventDefault();
+});
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+function sendInput() {
+  if (!ws || playerId == null) return;
+  let dx = 0, dy = 0;
+  if (keys['ArrowLeft'] || keys['a']) dx -= 1;
+  if (keys['ArrowRight'] || keys['d']) dx += 1;
+  if (keys['ArrowUp'] || keys['w']) dy -= 1;
+  if (keys['ArrowDown'] || keys['s']) dy += 1;
+  if (dx !== 0 || dy !== 0) {
+    ws.send(JSON.stringify({ type: 'input', dx, dy }));
+  }
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // 绘制道具
+  for (const e of state.entities || []) {
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd700';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+  }
+  // 绘制玩家
+  for (const p of state.players || []) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+    ctx.fillStyle = p.id === playerId ? '#0f0' : '#f44';
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(p.name + ' (' + p.score + ')', p.x - 20, p.y - 20);
+  }
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Frame: ' + state.frame, 10, 590);
+}
+
+setInterval(() => { sendInput(); render(); }, 1000 / 60);
+</script>
+</body>
+</html>

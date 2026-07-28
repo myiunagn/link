@@ -409,6 +409,20 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
             // 导入声明由 CLI 编译前处理(加载并合并 AST),解释器无需执行
             Ok(Value::None)
         }
+        Stmt::DomainDecl { name, config } => {
+            // domain 声明求值为一个 StructInstance，字段是配置项
+            let mut fields = HashMap::new();
+            for (key, expr) in config {
+                let val = eval_expr(expr, env, ctx)?;
+                fields.insert(key.clone(), val);
+            }
+            let domain = Value::StructInstance {
+                type_name: format!("domain:{}", name),
+                fields,
+            };
+            env.set(name.clone(), domain);
+            Ok(Value::None)
+        }
     }
 }
 

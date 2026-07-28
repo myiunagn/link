@@ -894,6 +894,16 @@ impl ConstFolder {
                     pipeline: self.fold_expr(pipeline),
                 }
             }
+            Stmt::DomainDecl { name, config } => {
+                let mut folded_config = Vec::new();
+                for (k, v) in config {
+                    folded_config.push((k.clone(), self.fold_expr(v)));
+                }
+                Stmt::DomainDecl {
+                    name: name.clone(),
+                    config: folded_config,
+                }
+            }
             Stmt::ModDecl { name } => Stmt::ModDecl { name: name.clone() },
             Stmt::UseDecl { path, alias } => Stmt::UseDecl {
                 path: path.clone(),

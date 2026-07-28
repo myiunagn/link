@@ -1,0 +1,13 @@
+// 游戏后端域配置示例
+// 启动: link game examples/game_server.link
+
+domain GameServer {
+    tick_rate: 60,
+    port: 7878,
+    max_players: 100,
+    max_rooms: 10,
+}
+
+fn main() {
+    println("Game server domain configured. Run with: link game examples/game_server.link");
+}

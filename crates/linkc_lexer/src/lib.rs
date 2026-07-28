@@ -11,7 +11,7 @@ pub enum Token {
     Fn, Let, Return, If, Else, Match, For, While, Loop, In,
     True, False, None, Some, Ok, Err, As,
     Break, Continue,
-    Extern, Export, Async, Await, Struct, Enum, Impl, Trait, Use, Mod, Pub, Mut,
+    Extern, Export, Async, Await, Struct, Enum, Impl, Trait, Use, Mod, Pub, Mut, Domain,
     Stream, Flow, Pipeline, Source, Sample,
 
     // 运算符
@@ -66,6 +66,7 @@ impl std::fmt::Display for Token {
             Token::Mod => write!(f, "mod"),
             Token::Pub => write!(f, "pub"),
             Token::Mut => write!(f, "mut"),
+            Token::Domain => write!(f, "domain"),
             Token::Stream => write!(f, "stream"),
             Token::Flow => write!(f, "flow"),
             Token::Pipeline => write!(f, "pipeline"),
@@ -329,6 +330,7 @@ impl Lexer {
             "mod" => Token::Mod,
             "pub" => Token::Pub,
             "mut" => Token::Mut,
+            "domain" => Token::Domain,
             "stream" => Token::Stream,
             "flow" => Token::Flow,
             "pipeline" => Token::Pipeline,
