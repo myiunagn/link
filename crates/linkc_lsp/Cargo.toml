@@ -1,0 +1,14 @@
+[package]
+name = "linkc_lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Language Server Protocol implementation for the Link programming language"
+
+[dependencies]
+linkc_lexer = { path = "../linkc_lexer" }
+linkc_parser = { path = "../linkc_parser" }
+linkc_sema = { path = "../linkc_sema" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"

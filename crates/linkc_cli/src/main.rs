@@ -34,6 +34,8 @@ fn main() {
         }
     } else if command == "repl" {
         run_repl();
+    } else if command == "lsp" {
+        run_lsp();
     } else if command == "--version" || command == "-V" {
         println!("linkc 0.1.0");
     } else if command == "--help" || command == "-h" {
@@ -53,6 +55,7 @@ fn print_help() {
     println!("  compile <file> [opts]   Compile a Link source file");
     println!("  repl                    Start interactive REPL");
     println!("  bindgen <args>          Generate bindings from export blocks");
+    println!("  lsp                     Start the LSP server on stdio");
     println!("  --version, -V           Print version");
     println!("  --help, -h              Print this help");
     println!();
@@ -290,6 +293,16 @@ fn run_bindgen(args: &[String]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn run_lsp() {
+    // The LSP server reads JSON-RPC from stdin and writes to stdout.
+    // Logging goes to stderr so it doesn't corrupt the protocol stream.
+    let mut server = linkc_lsp::LanguageServer::new();
+    if let Err(e) = server.run() {
+        eprintln!("link lsp error: {}", e);
+        process::exit(1);
+    }
 }
 
 fn run_repl() {

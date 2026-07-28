@@ -15,3 +15,4 @@ linkc_interpreter = { path = "../linkc_interpreter" }
 linkc_bindgen = { path = "../linkc_bindgen" }
 linkc_codegen = { path = "../linkc_codegen" }
 linkc_llvm = { path = "../linkc_llvm" }
+linkc_lsp = { path = "../linkc_lsp" }

@@ -1392,6 +1392,54 @@ fn register_builtins(env: &mut Environment) {
         arity: Some(1),
         func: builtin_sleep,
     });
+
+    // ===== 标准库: 数学函数 =====
+    env.set("abs".to_string(), Value::NativeFunction { name: "abs".to_string(), arity: Some(1), func: builtin_abs });
+    env.set("min".to_string(), Value::NativeFunction { name: "min".to_string(), arity: Some(2), func: builtin_min });
+    env.set("max".to_string(), Value::NativeFunction { name: "max".to_string(), arity: Some(2), func: builtin_max });
+    env.set("sqrt".to_string(), Value::NativeFunction { name: "sqrt".to_string(), arity: Some(1), func: builtin_sqrt });
+    env.set("pow".to_string(), Value::NativeFunction { name: "pow".to_string(), arity: Some(2), func: builtin_pow });
+    env.set("floor".to_string(), Value::NativeFunction { name: "floor".to_string(), arity: Some(1), func: builtin_floor });
+    env.set("ceil".to_string(), Value::NativeFunction { name: "ceil".to_string(), arity: Some(1), func: builtin_ceil });
+    env.set("round".to_string(), Value::NativeFunction { name: "round".to_string(), arity: Some(1), func: builtin_round });
+
+    // ===== 标准库: 字符串函数 =====
+    env.set("to_string".to_string(), Value::NativeFunction { name: "to_string".to_string(), arity: Some(1), func: builtin_to_string });
+    env.set("str_concat".to_string(), Value::NativeFunction { name: "str_concat".to_string(), arity: Some(2), func: builtin_str_concat });
+    env.set("str_len".to_string(), Value::NativeFunction { name: "str_len".to_string(), arity: Some(1), func: builtin_str_len });
+    env.set("str_upper".to_string(), Value::NativeFunction { name: "str_upper".to_string(), arity: Some(1), func: builtin_str_upper });
+    env.set("str_lower".to_string(), Value::NativeFunction { name: "str_lower".to_string(), arity: Some(1), func: builtin_str_lower });
+    env.set("str_contains".to_string(), Value::NativeFunction { name: "str_contains".to_string(), arity: Some(2), func: builtin_str_contains });
+    env.set("str_starts_with".to_string(), Value::NativeFunction { name: "str_starts_with".to_string(), arity: Some(2), func: builtin_str_starts_with });
+    env.set("str_ends_with".to_string(), Value::NativeFunction { name: "str_ends_with".to_string(), arity: Some(2), func: builtin_str_ends_with });
+    env.set("str_substring".to_string(), Value::NativeFunction { name: "str_substring".to_string(), arity: Some(3), func: builtin_str_substring });
+    env.set("str_split".to_string(), Value::NativeFunction { name: "str_split".to_string(), arity: Some(2), func: builtin_str_split });
+    env.set("str_trim".to_string(), Value::NativeFunction { name: "str_trim".to_string(), arity: Some(1), func: builtin_str_trim });
+
+    // ===== 标准库: 文件 IO =====
+    env.set("file_read".to_string(), Value::NativeFunction { name: "file_read".to_string(), arity: Some(1), func: builtin_file_read });
+    env.set("file_write".to_string(), Value::NativeFunction { name: "file_write".to_string(), arity: Some(2), func: builtin_file_write });
+    env.set("file_append".to_string(), Value::NativeFunction { name: "file_append".to_string(), arity: Some(2), func: builtin_file_append });
+    env.set("file_exists".to_string(), Value::NativeFunction { name: "file_exists".to_string(), arity: Some(1), func: builtin_file_exists });
+
+    // ===== 标准库: 时间函数 =====
+    env.set("time_now".to_string(), Value::NativeFunction { name: "time_now".to_string(), arity: Some(0), func: builtin_time_now });
+    env.set("time_now_ms".to_string(), Value::NativeFunction { name: "time_now_ms".to_string(), arity: Some(0), func: builtin_time_now_ms });
+
+    // ===== 标准库: 类型转换 =====
+    env.set("int".to_string(), Value::NativeFunction { name: "int".to_string(), arity: Some(1), func: builtin_int });
+    env.set("float".to_string(), Value::NativeFunction { name: "float".to_string(), arity: Some(1), func: builtin_float });
+    env.set("bool".to_string(), Value::NativeFunction { name: "bool".to_string(), arity: Some(1), func: builtin_bool });
+    env.set("str".to_string(), Value::NativeFunction { name: "str".to_string(), arity: Some(1), func: builtin_str });
+
+    // ===== 标准库: 列表函数 =====
+    env.set("list_push".to_string(), Value::NativeFunction { name: "list_push".to_string(), arity: Some(2), func: builtin_list_push });
+    env.set("list_pop".to_string(), Value::NativeFunction { name: "list_pop".to_string(), arity: Some(1), func: builtin_list_pop });
+    env.set("list_get".to_string(), Value::NativeFunction { name: "list_get".to_string(), arity: Some(2), func: builtin_list_get });
+    env.set("list_set".to_string(), Value::NativeFunction { name: "list_set".to_string(), arity: Some(3), func: builtin_list_set });
+    env.set("list_contains".to_string(), Value::NativeFunction { name: "list_contains".to_string(), arity: Some(2), func: builtin_list_contains });
+    env.set("list_reverse".to_string(), Value::NativeFunction { name: "list_reverse".to_string(), arity: Some(1), func: builtin_list_reverse });
+    env.set("list_sort".to_string(), Value::NativeFunction { name: "list_sort".to_string(), arity: Some(1), func: builtin_list_sort });
 }
 
 /// sleep(ms) —— 异步原语:阻塞当前线程 ms 毫秒
@@ -1403,6 +1451,327 @@ fn builtin_sleep(args: &[Value]) -> Result<Value, String> {
     let ms = args[0].as_int()?;
     std::thread::sleep(std::time::Duration::from_millis(ms as u64));
     Ok(Value::None)
+}
+
+// ===== 标准库: 数学函数实现 =====
+
+fn builtin_abs(args: &[Value]) -> Result<Value, String> {
+    let n = args.get(0).ok_or("abs expects 1 arg")?;
+    match n {
+        Value::Int(x) => Ok(Value::Int(x.abs())),
+        Value::Float(x) => Ok(Value::Float(x.abs())),
+        _ => Err("abs expects int or float".to_string()),
+    }
+}
+
+fn builtin_min(args: &[Value]) -> Result<Value, String> {
+    let a = args.get(0).ok_or("min expects 2 args")?;
+    let b = args.get(1).ok_or("min expects 2 args")?;
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(std::cmp::min(*x, *y))),
+        (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x.min(*y))),
+        _ => Err("min expects same-type numeric args".to_string()),
+    }
+}
+
+fn builtin_max(args: &[Value]) -> Result<Value, String> {
+    let a = args.get(0).ok_or("max expects 2 args")?;
+    let b = args.get(1).ok_or("max expects 2 args")?;
+    match (a, b) {
+        (Value::Int(x), Value::Int(y)) => Ok(Value::Int(std::cmp::max(*x, *y))),
+        (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x.max(*y))),
+        _ => Err("max expects same-type numeric args".to_string()),
+    }
+}
+
+fn builtin_sqrt(args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).ok_or("sqrt expects 1 arg")?;
+    let v = match x {
+        Value::Int(n) => *n as f64,
+        Value::Float(f) => *f,
+        _ => return Err("sqrt expects numeric arg".to_string()),
+    };
+    Ok(Value::Float(v.sqrt()))
+}
+
+fn builtin_pow(args: &[Value]) -> Result<Value, String> {
+    let base = args.get(0).ok_or("pow expects 2 args")?;
+    let exp = args.get(1).ok_or("pow expects 2 args")?;
+    let b = match base { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err("pow expects numeric base".to_string()) };
+    let e = match exp { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err("pow expects numeric exp".to_string()) };
+    Ok(Value::Float(b.powf(e)))
+}
+
+fn builtin_floor(args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).ok_or("floor expects 1 arg")?;
+    let v = match x { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err("floor expects numeric arg".to_string()) };
+    Ok(Value::Float(v.floor()))
+}
+
+fn builtin_ceil(args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).ok_or("ceil expects 1 arg")?;
+    let v = match x { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err("ceil expects numeric arg".to_string()) };
+    Ok(Value::Float(v.ceil()))
+}
+
+fn builtin_round(args: &[Value]) -> Result<Value, String> {
+    let x = args.get(0).ok_or("round expects 1 arg")?;
+    let v = match x { Value::Int(n) => *n as f64, Value::Float(f) => *f, _ => return Err("round expects numeric arg".to_string()) };
+    Ok(Value::Int(v.round() as i64))
+}
+
+// ===== 标准库: 字符串函数实现 =====
+
+fn builtin_to_string(args: &[Value]) -> Result<Value, String> {
+    let v = args.get(0).ok_or("to_string expects 1 arg")?;
+    Ok(Value::Str(value_to_string(v)))
+}
+
+fn builtin_str_concat(args: &[Value]) -> Result<Value, String> {
+    let a = args.get(0).ok_or("str_concat expects 2 args")?;
+    let b = args.get(1).ok_or("str_concat expects 2 args")?;
+    Ok(Value::Str(format!("{}{}", value_to_string(a), value_to_string(b))))
+}
+
+fn builtin_str_len(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) {
+        Some(Value::Str(s)) => s,
+        _ => return Err("str_len expects a string".to_string()),
+    };
+    Ok(Value::Int(s.chars().count() as i64))
+}
+
+fn builtin_str_upper(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) {
+        Some(Value::Str(s)) => s,
+        _ => return Err("str_upper expects a string".to_string()),
+    };
+    Ok(Value::Str(s.to_uppercase()))
+}
+
+fn builtin_str_lower(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) {
+        Some(Value::Str(s)) => s,
+        _ => return Err("str_lower expects a string".to_string()),
+    };
+    Ok(Value::Str(s.to_lowercase()))
+}
+
+fn builtin_str_contains(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("str_contains expects string arg 1".to_string()) };
+    let sub = match args.get(1) { Some(Value::Str(s)) => s, _ => return Err("str_contains expects string arg 2".to_string()) };
+    Ok(Value::Bool(s.contains(sub.as_str())))
+}
+
+fn builtin_str_starts_with(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("str_starts_with expects string arg 1".to_string()) };
+    let prefix = match args.get(1) { Some(Value::Str(s)) => s, _ => return Err("str_starts_with expects string arg 2".to_string()) };
+    Ok(Value::Bool(s.starts_with(prefix.as_str())))
+}
+
+fn builtin_str_ends_with(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("str_ends_with expects string arg 1".to_string()) };
+    let suffix = match args.get(1) { Some(Value::Str(s)) => s, _ => return Err("str_ends_with expects string arg 2".to_string()) };
+    Ok(Value::Bool(s.ends_with(suffix.as_str())))
+}
+
+fn builtin_str_substring(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("str_substring expects string arg 1".to_string()) };
+    let start = args.get(1).ok_or("str_substring expects start index")?.as_int()? as usize;
+    let end = args.get(2).ok_or("str_substring expects end index")?.as_int()? as usize;
+    let chars: Vec<char> = s.chars().collect();
+    let start = start.min(chars.len());
+    let end = end.min(chars.len());
+    if start > end {
+        return Err("str_substring: start > end".to_string());
+    }
+    Ok(Value::Str(chars[start..end].iter().collect()))
+}
+
+fn builtin_str_split(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("str_split expects string arg 1".to_string()) };
+    let sep = match args.get(1) { Some(Value::Str(s)) => s, _ => return Err("str_split expects string arg 2".to_string()) };
+    let parts: Vec<Value> = s.split(sep.as_str()).map(|p| Value::Str(p.to_string())).collect();
+    Ok(Value::List(parts))
+}
+
+fn builtin_str_trim(args: &[Value]) -> Result<Value, String> {
+    let s = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("str_trim expects a string".to_string()) };
+    Ok(Value::Str(s.trim().to_string()))
+}
+
+// ===== 标准库: 文件 IO 实现 =====
+
+fn builtin_file_read(args: &[Value]) -> Result<Value, String> {
+    let path = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("file_read expects a string path".to_string()) };
+    let content = std::fs::read_to_string(path).map_err(|e| format!("file_read: {}", e))?;
+    Ok(Value::Str(content))
+}
+
+fn builtin_file_write(args: &[Value]) -> Result<Value, String> {
+    let path = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("file_write expects a string path".to_string()) };
+    let content = match args.get(1) { Some(Value::Str(s)) => s, _ => return Err("file_write expects string content".to_string()) };
+    std::fs::write(path, content).map_err(|e| format!("file_write: {}", e))?;
+    Ok(Value::None)
+}
+
+fn builtin_file_append(args: &[Value]) -> Result<Value, String> {
+    use std::io::Write;
+    let path = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("file_append expects a string path".to_string()) };
+    let content = match args.get(1) { Some(Value::Str(s)) => s, _ => return Err("file_append expects string content".to_string()) };
+    let mut f = std::fs::OpenOptions::new().append(true).create(true).open(path).map_err(|e| format!("file_append: {}", e))?;
+    f.write_all(content.as_bytes()).map_err(|e| format!("file_append: {}", e))?;
+    Ok(Value::None)
+}
+
+fn builtin_file_exists(args: &[Value]) -> Result<Value, String> {
+    let path = match args.get(0) { Some(Value::Str(s)) => s, _ => return Err("file_exists expects a string path".to_string()) };
+    Ok(Value::Bool(std::path::Path::new(path).exists()))
+}
+
+// ===== 标准库: 时间函数实现 =====
+
+fn builtin_time_now(_args: &[Value]) -> Result<Value, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("time_now: {}", e))?;
+    Ok(Value::Int(now.as_secs() as i64))
+}
+
+fn builtin_time_now_ms(_args: &[Value]) -> Result<Value, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("time_now_ms: {}", e))?;
+    Ok(Value::Int(now.as_millis() as i64))
+}
+
+// ===== 标准库: 类型转换实现 =====
+
+fn builtin_int(args: &[Value]) -> Result<Value, String> {
+    let v = args.get(0).ok_or("int expects 1 arg")?;
+    match v {
+        Value::Int(n) => Ok(Value::Int(*n)),
+        Value::Float(f) => Ok(Value::Int(*f as i64)),
+        Value::Bool(b) => Ok(Value::Int(if *b { 1 } else { 0 })),
+        Value::Str(s) => s.parse::<i64>().map(Value::Int).map_err(|e| format!("int: {}", e)),
+        _ => Err("int: cannot convert".to_string()),
+    }
+}
+
+fn builtin_float(args: &[Value]) -> Result<Value, String> {
+    let v = args.get(0).ok_or("float expects 1 arg")?;
+    match v {
+        Value::Int(n) => Ok(Value::Float(*n as f64)),
+        Value::Float(f) => Ok(Value::Float(*f)),
+        Value::Str(s) => s.parse::<f64>().map(Value::Float).map_err(|e| format!("float: {}", e)),
+        _ => Err("float: cannot convert".to_string()),
+    }
+}
+
+fn builtin_bool(args: &[Value]) -> Result<Value, String> {
+    let v = args.get(0).ok_or("bool expects 1 arg")?;
+    match v {
+        Value::Int(n) => Ok(Value::Bool(*n != 0)),
+        Value::Float(f) => Ok(Value::Bool(*f != 0.0)),
+        Value::Bool(b) => Ok(Value::Bool(*b)),
+        Value::Str(s) => Ok(Value::Bool(!s.is_empty())),
+        Value::None => Ok(Value::Bool(false)),
+        _ => Err("bool: cannot convert".to_string()),
+    }
+}
+
+fn builtin_str(args: &[Value]) -> Result<Value, String> {
+    let v = args.get(0).ok_or("str expects 1 arg")?;
+    Ok(Value::Str(value_to_string(v)))
+}
+
+// ===== 标准库: 列表函数实现 =====
+
+fn builtin_list_push(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items.clone(),
+        _ => return Err("list_push expects a list".to_string()),
+    };
+    let item = args.get(1).ok_or("list_push expects an item")?.clone();
+    let mut new_list = list;
+    new_list.push(item);
+    Ok(Value::List(new_list))
+}
+
+fn builtin_list_pop(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items.clone(),
+        _ => return Err("list_pop expects a list".to_string()),
+    };
+    if list.is_empty() {
+        return Err("list_pop: list is empty".to_string());
+    }
+    let mut new_list = list;
+    let last = new_list.pop().unwrap();
+    // 返回弹出的元素(列表以引用方式传递时原地修改;v0.1 返回新列表与弹出的元素组成的元组简化为返回弹出元素)
+    let _ = new_list;
+    Ok(last)
+}
+
+fn builtin_list_get(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items,
+        _ => return Err("list_get expects a list".to_string()),
+    };
+    let idx = args.get(1).ok_or("list_get expects an index")?.as_int()? as usize;
+    list.get(idx).cloned().ok_or_else(|| format!("list_get: index {} out of bounds", idx))
+}
+
+fn builtin_list_set(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items.clone(),
+        _ => return Err("list_set expects a list".to_string()),
+    };
+    let idx = args.get(1).ok_or("list_set expects an index")?.as_int()? as usize;
+    let val = args.get(2).ok_or("list_set expects a value")?.clone();
+    let mut new_list = list;
+    if idx >= new_list.len() {
+        return Err(format!("list_set: index {} out of bounds", idx));
+    }
+    new_list[idx] = val;
+    Ok(Value::List(new_list))
+}
+
+fn builtin_list_contains(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items,
+        _ => return Err("list_contains expects a list".to_string()),
+    };
+    let target = args.get(1).ok_or("list_contains expects a target")?;
+    Ok(Value::Bool(list.iter().any(|v| v == target)))
+}
+
+fn builtin_list_reverse(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items.clone(),
+        _ => return Err("list_reverse expects a list".to_string()),
+    };
+    let mut new_list = list;
+    new_list.reverse();
+    Ok(Value::List(new_list))
+}
+
+fn builtin_list_sort(args: &[Value]) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(items)) => items.clone(),
+        _ => return Err("list_sort expects a list".to_string()),
+    };
+    let mut new_list = list;
+    new_list.sort_by(|a, b| {
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => x.cmp(y),
+            (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+            (Value::Str(x), Value::Str(y)) => x.cmp(y),
+            (Value::Bool(x), Value::Bool(y)) => x.cmp(y),
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+    Ok(Value::List(new_list))
 }
 
 fn builtin_print(args: &[Value]) -> Result<Value, String> {
@@ -2420,5 +2789,178 @@ mod tests {
             Value::Int(1), Value::Int(2), Value::Int(3),
             Value::Int(4), Value::Int(5),
         ]));
+    }
+
+    // ===== Phase 2.13: 标准库测试 =====
+
+    #[test]
+    fn test_stdlib_math_abs() {
+        assert_eq!(run("abs(-42)").unwrap(), Value::Int(42));
+        assert_eq!(run("abs(-3.14)").unwrap(), Value::Float(3.14));
+        assert_eq!(run("abs(5)").unwrap(), Value::Int(5));
+    }
+
+    #[test]
+    fn test_stdlib_math_min_max() {
+        assert_eq!(run("min(3, 7)").unwrap(), Value::Int(3));
+        assert_eq!(run("max(3, 7)").unwrap(), Value::Int(7));
+        assert_eq!(run("min(2.5, 1.5)").unwrap(), Value::Float(1.5));
+    }
+
+    #[test]
+    fn test_stdlib_math_sqrt_pow() {
+        assert_eq!(run("sqrt(144)").unwrap(), Value::Float(12.0));
+        assert_eq!(run("sqrt(2)").unwrap(), Value::Float(1.4142135623730951));
+        assert_eq!(run("pow(2, 10)").unwrap(), Value::Float(1024.0));
+    }
+
+    #[test]
+    fn test_stdlib_math_floor_ceil_round() {
+        assert_eq!(run("floor(3.7)").unwrap(), Value::Float(3.0));
+        assert_eq!(run("ceil(3.2)").unwrap(), Value::Float(4.0));
+        assert_eq!(run("round(3.5)").unwrap(), Value::Int(4));
+        assert_eq!(run("round(3.4)").unwrap(), Value::Int(3));
+    }
+
+    #[test]
+    fn test_stdlib_str_upper_lower() {
+        assert_eq!(run("str_upper(\"hello\")").unwrap(), Value::Str("HELLO".to_string()));
+        assert_eq!(run("str_lower(\"WORLD\")").unwrap(), Value::Str("world".to_string()));
+    }
+
+    #[test]
+    fn test_stdlib_str_len_trim() {
+        assert_eq!(run("str_len(\"hello\")").unwrap(), Value::Int(5));
+        assert_eq!(run("str_trim(\"  hi  \")").unwrap(), Value::Str("hi".to_string()));
+    }
+
+    #[test]
+    fn test_stdlib_str_contains_starts_ends() {
+        assert_eq!(run("str_contains(\"hello world\", \"world\")").unwrap(), Value::Bool(true));
+        assert_eq!(run("str_contains(\"hello\", \"xyz\")").unwrap(), Value::Bool(false));
+        assert_eq!(run("str_starts_with(\"hello\", \"he\")").unwrap(), Value::Bool(true));
+        assert_eq!(run("str_ends_with(\"hello\", \"lo\")").unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn test_stdlib_str_concat() {
+        assert_eq!(run("str_concat(\"foo\", \"bar\")").unwrap(), Value::Str("foobar".to_string()));
+    }
+
+    #[test]
+    fn test_stdlib_str_substring() {
+        assert_eq!(run("str_substring(\"hello world\", 0, 5)").unwrap(), Value::Str("hello".to_string()));
+        assert_eq!(run("str_substring(\"hello\", 1, 3)").unwrap(), Value::Str("el".to_string()));
+    }
+
+    #[test]
+    fn test_stdlib_str_split() {
+        let result = run("str_split(\"a,b,c\", \",\")").unwrap();
+        assert_eq!(result, Value::List(vec![
+            Value::Str("a".to_string()),
+            Value::Str("b".to_string()),
+            Value::Str("c".to_string()),
+        ]));
+    }
+
+    #[test]
+    fn test_stdlib_type_int() {
+        assert_eq!(run("int(3.14)").unwrap(), Value::Int(3));
+        assert_eq!(run("int(\"123\")").unwrap(), Value::Int(123));
+        assert_eq!(run("int(true)").unwrap(), Value::Int(1));
+    }
+
+    #[test]
+    fn test_stdlib_type_float() {
+        assert_eq!(run("float(42)").unwrap(), Value::Float(42.0));
+        assert_eq!(run("float(\"3.5\")").unwrap(), Value::Float(3.5));
+    }
+
+    #[test]
+    fn test_stdlib_type_bool() {
+        assert_eq!(run("bool(0)").unwrap(), Value::Bool(false));
+        assert_eq!(run("bool(1)").unwrap(), Value::Bool(true));
+        assert_eq!(run("bool(\"\")").unwrap(), Value::Bool(false));
+        assert_eq!(run("bool(\"x\")").unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn test_stdlib_type_str() {
+        assert_eq!(run("str(42)").unwrap(), Value::Str("42".to_string()));
+        assert_eq!(run("str(3.14)").unwrap(), Value::Str("3.14".to_string()));
+        assert_eq!(run("str(true)").unwrap(), Value::Str("true".to_string()));
+    }
+
+    #[test]
+    fn test_stdlib_list_push() {
+        let result = run("list_push([1, 2, 3], 4)").unwrap();
+        assert_eq!(result, Value::List(vec![
+            Value::Int(1), Value::Int(2), Value::Int(3), Value::Int(4),
+        ]));
+    }
+
+    #[test]
+    fn test_stdlib_list_get() {
+        assert_eq!(run("list_get([10, 20, 30], 1)").unwrap(), Value::Int(20));
+    }
+
+    #[test]
+    fn test_stdlib_list_contains() {
+        assert_eq!(run("list_contains([1, 2, 3], 2)").unwrap(), Value::Bool(true));
+        assert_eq!(run("list_contains([1, 2, 3], 5)").unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn test_stdlib_list_reverse() {
+        let result = run("list_reverse([1, 2, 3])").unwrap();
+        assert_eq!(result, Value::List(vec![Value::Int(3), Value::Int(2), Value::Int(1)]));
+    }
+
+    #[test]
+    fn test_stdlib_list_sort() {
+        let result = run("list_sort([3, 1, 4, 1, 5, 9, 2, 6])").unwrap();
+        assert_eq!(result, Value::List(vec![
+            Value::Int(1), Value::Int(1), Value::Int(2), Value::Int(3),
+            Value::Int(4), Value::Int(5), Value::Int(6), Value::Int(9),
+        ]));
+    }
+
+    #[test]
+    fn test_stdlib_list_pop() {
+        assert_eq!(run("list_pop([1, 2, 3])").unwrap(), Value::Int(3));
+    }
+
+    #[test]
+    fn test_stdlib_file_io() {
+        // 先写入,再读取
+        let _ = run("file_write(\"test_stdlib_tmp.txt\", \"hello\")").unwrap();
+        let exists = run("file_exists(\"test_stdlib_tmp.txt\")").unwrap();
+        assert_eq!(exists, Value::Bool(true));
+        let content = run("file_read(\"test_stdlib_tmp.txt\")").unwrap();
+        assert_eq!(content, Value::Str("hello".to_string()));
+        // 追加
+        let _ = run("file_append(\"test_stdlib_tmp.txt\", \" world\")").unwrap();
+        let content2 = run("file_read(\"test_stdlib_tmp.txt\")").unwrap();
+        assert_eq!(content2, Value::Str("hello world".to_string()));
+        // 清理
+        let _ = std::fs::remove_file("test_stdlib_tmp.txt");
+    }
+
+    #[test]
+    fn test_stdlib_time_now() {
+        let result = run("time_now()").unwrap();
+        // 应该是一个合理的时间戳(> 2020 年)
+        if let Value::Int(t) = result {
+            assert!(t > 1577836800, "time_now should be after 2020");
+        } else {
+            panic!("time_now should return Int");
+        }
+    }
+
+    #[test]
+    fn test_stdlib_to_string() {
+        assert_eq!(run("to_string(42)").unwrap(), Value::Str("42".to_string()));
+        assert_eq!(run("to_string(true)").unwrap(), Value::Str("true".to_string()));
+        assert_eq!(run("to_string([1, 2])").unwrap(), Value::Str("[1, 2]".to_string()));
     }
 }

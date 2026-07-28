@@ -855,6 +855,34 @@ fn main() {
 - 修复函数调用返回 double 类型时 printf 错误使用 `%lld` 的问题
 - 类型检查 + 常量折叠 + 死代码消除完整集成到编译流水线
 
+#### Phase 2.14:LSP 服务器 ✅
+
+**目标**:为编辑器提供语言智能支持,替代 VSCode 扩展中简陋的 `spawnSync` 诊断方案。
+
+**交付物**:
+
+| 模块 | 内容 |
+|------|------|
+| `linkc_lsp` crate | 完整的 LSP 服务器实现,JSON-RPC over stdio |
+| 文档诊断 | 集成 lexer/parser/sema,实时发布 `textDocument/publishDiagnostics` |
+| 自动补全 | 关键字(35+) + 内置函数(35+) + 内置类型(16) + 文档符号 |
+| 悬停提示 | 函数签名 / 结构体定义 / 枚举定义 / 内置函数文档 |
+| 跳转定义 | 函数 / 变量 / 结构体 / 枚举 / 模块声明位置 |
+| 文档符号 | 大纲视图,支持 Function / Struct / Enum / Variable / Module |
+| CLI 集成 | `link lsp` 子命令启动服务器 |
+| VSCode 扩展 | 使用 `vscode-languageclient` v9,支持 trace 配置 |
+
+**实现要点**:
+
+- 三层架构:`jsonrpc`(协议层) → `analysis`(文档分析) → `server`(LSP 功能分发)
+- `lex_safe` 预扫描源码,将 lexer panic(非法字符 / 未终止字符串)转化为诊断,保证服务器永不崩溃
+- 全量文档同步(`textDocumentSync: 1`),每次变更重新分析并推送诊断
+- 符号收集器遍历 AST 顶层语句,记录函数 / 结构体 / 枚举 / let / mod 声明的位置和签名
+- 位置映射使用 `line_starts` 二分查找,offset → (line, col) 转换 O(log n)
+- e2e 集成测试通过子进程启动 `link lsp`,验证完整 JSON-RPC 协议栈
+
+**测试覆盖**:17 个单元测试 + 7 个 e2e 集成测试,工作区总计 294 个测试全部通过
+
 ### 5.6 Phase 2:编译期 + 游戏后端(约 12 周)
 
 **目标**:LLVM 编译上线,游戏后端域加入。

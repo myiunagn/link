@@ -1,8 +1,8 @@
 {
   "name": "link-language",
   "displayName": "Link Language Support",
-  "description": "Syntax highlighting and language support for the Link programming language",
-  "version": "0.1.0",
+  "description": "Language server, syntax highlighting, and IntelliSense for the Link programming language",
+  "version": "0.2.0",
   "publisher": "link-lang",
   "engines": {
     "vscode": "^1.80.0"
@@ -25,7 +25,23 @@
         "scopeName": "source.link",
         "path": "./syntaxes/link.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Link",
+      "properties": {
+        "link.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the `link` binary. If empty, the extension searches the workspace target/ and PATH."
+        },
+        "link.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace LSP communication in the Output panel."
+        }
+      }
+    }
   },
   "activationEvents": [
     "onLanguage:link"
@@ -35,6 +51,9 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

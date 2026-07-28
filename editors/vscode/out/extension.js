@@ -36,150 +36,80 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const child_process = __importStar(require("child_process"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
-let diagnosticCollection;
-let debounceTimer = null;
+const node_1 = require("vscode-languageclient/node");
+let client;
 function activate(context) {
-    diagnosticCollection = vscode.languages.createDiagnosticCollection('link');
-    vscode.workspace.onDidChangeTextDocument((e) => {
-        if (e.document.languageId === 'link') {
-            scheduleDiagnostics(e.document);
+    const binaryPath = resolveLinkBinary();
+    if (!binaryPath) {
+        vscode.window.showWarningMessage('Link language server not found. Build with `cargo build` or set "link.binaryPath".');
+        return;
+    }
+    const serverOptions = {
+        command: binaryPath,
+        args: ['lsp'],
+        transport: node_1.TransportKind.stdio,
+    };
+    const traceChannel = vscode.window.createOutputChannel('Link Language Server Trace');
+    context.subscriptions.push(traceChannel);
+    const clientOptions = {
+        documentSelector: [{ scheme: 'file', language: 'link' }],
+        synchronize: {
+            fileEvents: vscode.workspace.createFileSystemWatcher('**/*.link'),
+        },
+        outputChannel: vscode.window.createOutputChannel('Link Language Server'),
+        traceOutputChannel: traceChannel,
+    };
+    client = new node_1.LanguageClient('linkLanguageServer', 'Link Language Server', serverOptions, clientOptions);
+    // Apply initial trace setting.
+    applyTraceSetting(client);
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('link.trace.server') && client) {
+            applyTraceSetting(client);
         }
-    });
-    vscode.workspace.onDidOpenTextDocument((doc) => {
-        if (doc.languageId === 'link') {
-            runDiagnostics(doc);
-        }
-    });
-    vscode.workspace.onDidSaveTextDocument((doc) => {
-        if (doc.languageId === 'link') {
-            runDiagnostics(doc);
-        }
-    });
-    vscode.workspace.textDocuments.forEach((doc) => {
-        if (doc.languageId === 'link') {
-            runDiagnostics(doc);
-        }
-    });
+    }));
+    // LanguageClient implements Disposable; register it so VSCode stops the
+    // server automatically on extension deactivation.
+    context.subscriptions.push(client);
+    client.start();
 }
 function deactivate() {
-    if (debounceTimer) {
-        clearTimeout(debounceTimer);
+    if (!client) {
+        return undefined;
     }
+    return client.stop();
 }
-function scheduleDiagnostics(doc) {
-    if (debounceTimer) {
-        clearTimeout(debounceTimer);
-    }
-    debounceTimer = setTimeout(() => {
-        runDiagnostics(doc);
-    }, 500);
+function applyTraceSetting(c) {
+    const value = vscode.workspace.getConfiguration('link').get('trace.server') || 'off';
+    const trace = node_1.Trace.fromString(value);
+    c.setTrace(trace);
 }
-function runDiagnostics(doc) {
-    const linkCmd = findLinkBinary();
-    if (!linkCmd) {
-        return;
+/// Locate the `link` binary. Resolution order:
+///   1. `link.binaryPath` setting (if set and exists)
+///   2. `<workspace>/target/debug/link[.exe]`
+///   3. `<workspace>/target/release/link[.exe]`
+///   4. `link` on PATH
+function resolveLinkBinary() {
+    const isWin = process.platform === 'win32';
+    const exe = isWin ? 'link.exe' : 'link';
+    const configPath = vscode.workspace.getConfiguration('link').get('binaryPath');
+    if (configPath && fs.existsSync(configPath)) {
+        return configPath;
     }
-    const tmpFile = doc.fileName;
-    if (!fs.existsSync(tmpFile)) {
-        return;
-    }
-    try {
-        const result = child_process.spawnSync(linkCmd, ['run', tmpFile], { encoding: 'utf8', timeout: 5000 });
-        const stderr = result.stderr || '';
-        const stdout = result.stdout || '';
-        const diagnostics = [];
-        parseErrors(stderr, diagnostics, doc);
-        parseErrors(stdout, diagnostics, doc);
-        diagnosticCollection.set(doc.uri, diagnostics);
-    }
-    catch (e) {
-    }
-}
-function parseErrors(output, diagnostics, doc) {
-    const lines = output.split('\n');
-    for (const line of lines) {
-        const trimmed = line.trim();
-        const lexerMatch = trimmed.match(/^Error: .* at line (\d+), col (\d+): (.*)$/);
-        if (lexerMatch) {
-            const lineNum = parseInt(lexerMatch[1]) - 1;
-            const colNum = parseInt(lexerMatch[2]) - 1;
-            const message = lexerMatch[3];
-            diagnostics.push(makeDiagnostic(doc, lineNum, colNum, message, vscode.DiagnosticSeverity.Error));
-            continue;
-        }
-        const parserMatch = trimmed.match(/^Error.*line (\d+): (.*)$/);
-        if (parserMatch) {
-            const lineNum = parseInt(parserMatch[1]) - 1;
-            const message = parserMatch[2];
-            diagnostics.push(makeDiagnostic(doc, lineNum, 0, message, vscode.DiagnosticSeverity.Error));
-            continue;
-        }
-        if (trimmed.startsWith('Error:') && trimmed.includes('line')) {
-            const lineMatch = trimmed.match(/line (\d+)/);
-            if (lineMatch) {
-                const lineNum = parseInt(lineMatch[1]) - 1;
-                const message = trimmed.replace(/^Error:\s*/, '');
-                diagnostics.push(makeDiagnostic(doc, lineNum, 0, message, vscode.DiagnosticSeverity.Error));
+    const folders = vscode.workspace.workspaceFolders;
+    if (folders) {
+        for (const folder of folders) {
+            const debug = path.join(folder.uri.fsPath, 'target', 'debug', exe);
+            if (fs.existsSync(debug)) {
+                return debug;
             }
-            continue;
-        }
-        if (trimmed.startsWith('Undefined variable:') ||
-            trimmed.startsWith('Cannot') ||
-            trimmed.startsWith('Division by zero') ||
-            trimmed.startsWith('Modulo by zero') ||
-            trimmed.startsWith('Index') ||
-            trimmed.startsWith('Expected ')) {
-            diagnostics.push(makeDiagnostic(doc, 0, 0, trimmed, vscode.DiagnosticSeverity.Error));
-        }
-    }
-}
-function makeDiagnostic(doc, line, col, message, severity) {
-    const safeLine = Math.max(0, Math.min(line, doc.lineCount - 1));
-    const lineText = doc.lineAt(safeLine).text;
-    const safeCol = Math.max(0, Math.min(col, lineText.length));
-    let endCol = safeCol + 1;
-    if (safeCol < lineText.length) {
-        const match = lineText.slice(safeCol).match(/^[a-zA-Z_][a-zA-Z0-9_]*|\S/);
-        if (match) {
-            endCol = safeCol + match[0].length;
-        }
-    }
-    const range = new vscode.Range(safeLine, safeCol, safeLine, Math.min(endCol, lineText.length));
-    return new vscode.Diagnostic(range, message, severity);
-}
-function findLinkBinary() {
-    const candidates = [];
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (workspaceFolders) {
-        for (const folder of workspaceFolders) {
-            candidates.push(path.join(folder.uri.fsPath, 'target', 'debug', 'link.exe'));
-            candidates.push(path.join(folder.uri.fsPath, 'target', 'release', 'link.exe'));
-        }
-    }
-    const config = vscode.workspace.getConfiguration('link');
-    const customPath = config.get('binaryPath');
-    if (customPath) {
-        candidates.push(customPath);
-    }
-    candidates.push('link');
-    for (const candidate of candidates) {
-        if (path.isAbsolute(candidate) && fs.existsSync(candidate)) {
-            return candidate;
-        }
-        if (!path.isAbsolute(candidate)) {
-            try {
-                const result = child_process.spawnSync(candidate, ['--version'], { encoding: 'utf8' });
-                if (result.status === 0) {
-                    return candidate;
-                }
-            }
-            catch (e) {
+            const release = path.join(folder.uri.fsPath, 'target', 'release', exe);
+            if (fs.existsSync(release)) {
+                return release;
             }
         }
     }
-    return null;
+    return exe;
 }
 //# sourceMappingURL=extension.js.map

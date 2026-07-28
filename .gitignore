@@ -3,3 +3,5 @@ Cargo.lock
 .idea
 .vscode
 /dist
+# Node.js dependencies for editor extensions
+node_modules/

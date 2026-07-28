@@ -7,6 +7,7 @@ members = [
     "crates/linkc_bindgen",
     "crates/linkc_codegen",
     "crates/linkc_llvm",
+    "crates/linkc_lsp",
     "crates/linkc_cli",
 ]
 resolver = "2"
