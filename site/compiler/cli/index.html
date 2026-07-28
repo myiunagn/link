@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://myiunagn.github.io/linkdoc/compiler/cli/">
       
       
-        <link rel="prev" href="../llvm-backend/">
+        <link rel="prev" href="../borrow-checker/">
       
       
         <link rel="next" href="../../examples/">
@@ -1281,6 +1281,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1372,6 +1378,90 @@
     
   
     LLVM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wasm-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WASM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrow-checker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    借用检查器
   
 
     
@@ -1562,13 +1652,46 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        生成 Python 代码
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wasm-wat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        生成 WASM WAT 代码
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        禁用借用检查器
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#_9" class="md-nav__link">
+  <a href="#_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         后端选择
@@ -1601,13 +1724,35 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#python_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python 后端
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wasm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WASM 后端
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#_10" class="md-nav__link">
+  <a href="#_11" class="md-nav__link">
     <span class="md-ellipsis">
       
         优化等级
@@ -1618,7 +1763,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_11" class="md-nav__link">
+  <a href="#_12" class="md-nav__link">
     <span class="md-ellipsis">
       
         调试信息
@@ -1629,7 +1774,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_12" class="md-nav__link">
+  <a href="#_13" class="md-nav__link">
     <span class="md-ellipsis">
       
         环境要求
@@ -1668,7 +1813,96 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_13" class="md-nav__link">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        借用检查器
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        编译优化
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="编译优化">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        常量折叠
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        死代码消除
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lsp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LSP 语言服务器
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LSP 语言服务器">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vs-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VS Code 配置
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        游戏后端
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_19" class="md-nav__link">
     <span class="md-ellipsis">
       
         命令行帮助
@@ -1885,13 +2119,46 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        生成 Python 代码
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wasm-wat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        生成 WASM WAT 代码
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        禁用借用检查器
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#_9" class="md-nav__link">
+  <a href="#_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         后端选择
@@ -1924,13 +2191,35 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#python_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python 后端
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wasm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WASM 后端
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#_10" class="md-nav__link">
+  <a href="#_11" class="md-nav__link">
     <span class="md-ellipsis">
       
         优化等级
@@ -1941,7 +2230,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_11" class="md-nav__link">
+  <a href="#_12" class="md-nav__link">
     <span class="md-ellipsis">
       
         调试信息
@@ -1952,7 +2241,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_12" class="md-nav__link">
+  <a href="#_13" class="md-nav__link">
     <span class="md-ellipsis">
       
         环境要求
@@ -1991,7 +2280,96 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#_13" class="md-nav__link">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        借用检查器
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        编译优化
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="编译优化">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        常量折叠
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        死代码消除
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lsp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LSP 语言服务器
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LSP 语言服务器">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vs-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VS Code 配置
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        游戏后端
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_19" class="md-nav__link">
     <span class="md-ellipsis">
       
         命令行帮助
@@ -2043,7 +2421,7 @@
 </tr>
 <tr>
 <td><code>--backend &lt;type&gt;</code></td>
-<td>代码生成后端</td>
+<td>代码生成后端: <code>c</code> / <code>llvm</code> / <code>python</code> / <code>py</code> / <code>wasm</code></td>
 <td><code>c</code></td>
 </tr>
 <tr>
@@ -2071,6 +2449,11 @@
 <td>不链接（仅生成目标文件）</td>
 <td>否</td>
 </tr>
+<tr>
+<td><code>--no-borrow-check</code></td>
+<td>禁用借用检查器</td>
+<td>否</td>
+</tr>
 </tbody>
 </table>
 <h2 id="_3">使用示例<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
@@ -2095,23 +2478,50 @@
 <h3 id="_8">不链接（仅生成目标文件）<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--no-link
 </code></pre></div>
-<h2 id="_9">后端选择<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h2>
+<h3 id="python">生成 Python 代码<a class="headerlink" href="#python" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>python<span class="w"> </span>-o<span class="w"> </span>output.py
+</code></pre></div>
+<h3 id="wasm-wat">生成 WASM WAT 代码<a class="headerlink" href="#wasm-wat" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>wasm<span class="w"> </span>-o<span class="w"> </span>output.wat
+</code></pre></div>
+<h3 id="_9">禁用借用检查器<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--no-borrow-check
+</code></pre></div>
+<h2 id="_10">后端选择<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
 <h3 id="c_1">C 后端（默认）<a class="headerlink" href="#c_1" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>c
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>c
 </code></pre></div>
 <p>特点：
 - 跨平台支持好
 - 依赖系统 C 编译器
 - 支持 struct/enum/list/match 等高级特性</p>
 <h3 id="llvm">LLVM 后端<a class="headerlink" href="#llvm" title="Permanent link">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>llvm
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>llvm
 </code></pre></div>
 <p>特点：
 - 需要安装 LLVM
 - 通过 <code>--features llvm-backend</code> 启用
 - 支持更多优化通道
 - 当前功能较少（基础类型、函数、控制流）</p>
-<h2 id="_10">优化等级<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
+<h3 id="python_1">Python 后端<a class="headerlink" href="#python_1" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>python
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="c1"># 或简写</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>py
+</code></pre></div>
+<p>特点：
+- 生成可读的 Python 代码
+- 无需额外依赖，直接用 Python 解释器运行
+- 适合快速原型开发和脚本场景
+- 支持 struct/enum/match/stream/async 等高级特性</p>
+<h3 id="wasm">WASM 后端<a class="headerlink" href="#wasm" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>link<span class="w"> </span>compile<span class="w"> </span>myfile.link<span class="w"> </span>--backend<span class="w"> </span>wasm
+</code></pre></div>
+<p>特点：
+- 生成 WAT（WebAssembly Text Format）格式代码
+- 可通过 <code>wat2wasm</code> 等工具编译为 <code>.wasm</code> 二进制
+- 支持导入导出函数
+- 适合 Web 端和嵌入式场景</p>
+<h2 id="_11">优化等级<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -2138,13 +2548,13 @@
 </tr>
 </tbody>
 </table>
-<h2 id="_11">调试信息<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h2>
+<h2 id="_12">调试信息<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
 <p>使用 <code>-g</code> 选项可以生成调试信息：</p>
 <ul>
 <li><strong>C 后端</strong>: 添加 <code>#line</code> 指令</li>
 <li><strong>LLVM 后端</strong>: 添加调试元数据</li>
 </ul>
-<h2 id="_12">环境要求<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h2>
+<h2 id="_13">环境要求<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h2>
 <h3 id="c_2">C 后端<a class="headerlink" href="#c_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Windows</strong>: 需要 MSVC (<code>cl</code>) 在 PATH 中</li>
@@ -2154,8 +2564,59 @@
 <ul>
 <li>需要系统安装 LLVM（通过 <code>--features llvm-backend</code> 启用）</li>
 </ul>
-<h2 id="_13">命令行帮助<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>link<span class="w"> </span>compile<span class="w"> </span>--help
+<h2 id="_14">借用检查器<a class="headerlink" href="#_14" title="Permanent link">&para;</a></h2>
+<p>Link v0.2.0 内置了借用检查器，在编译时自动执行，用于保证内存安全：</p>
+<ul>
+<li><strong>所有权跟踪</strong>：每个值有且仅有一个所有者</li>
+<li><strong>移动语义</strong>：赋值和传参默认移动所有权</li>
+<li><strong>Copy 类型</strong>：基础类型默认 Copy，不移动所有权</li>
+<li><strong>借用规则</strong>：不可变借用可多个，可变借用只能一个</li>
+<li><strong>use-after-move 检测</strong>：编译时报告使用已移动值的错误</li>
+</ul>
+<p>可通过 <code>--no-borrow-check</code> 选项禁用借用检查器（不推荐）。</p>
+<p>详细说明请参考 <a href="../borrow-checker/">借用检查器文档</a>。</p>
+<h2 id="_15">编译优化<a class="headerlink" href="#_15" title="Permanent link">&para;</a></h2>
+<p>Link 编译器支持多种编译优化，在 <code>--opt-level</code> 大于等于 1 时启用：</p>
+<h3 id="_16">常量折叠<a class="headerlink" href="#_16" title="Permanent link">&para;</a></h3>
+<p>编译期对常量表达式进行求值，减少运行时计算：</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>// 编译期直接计算为 42
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>let x = 10 + 32;
+</code></pre></div>
+<h3 id="_17">死代码消除<a class="headerlink" href="#_17" title="Permanent link">&para;</a></h3>
+<p>移除永远不会执行的代码分支：</p>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>if false {
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>    println(&quot;这段代码会被消除&quot;);
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>}
+</code></pre></div>
+<h2 id="lsp">LSP 语言服务器<a class="headerlink" href="#lsp" title="Permanent link">&para;</a></h2>
+<p><code>link lsp</code> 命令启动 LSP 语言服务器，为编辑器提供智能支持：</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>link<span class="w"> </span>lsp
+</code></pre></div>
+<p>支持的功能：</p>
+<ul>
+<li><strong>诊断</strong>：实时语法和类型错误提示</li>
+<li><strong>补全</strong>：代码自动补全</li>
+<li><strong>悬停</strong>：悬停显示类型和文档</li>
+<li><strong>跳转</strong>：跳转到定义位置</li>
+<li><strong>符号大纲</strong>：文档符号列表</li>
+</ul>
+<h3 id="vs-code">VS Code 配置<a class="headerlink" href="#vs-code" title="Permanent link">&para;</a></h3>
+<p>在 VS Code 中安装 Link 语言扩展后，会自动启动 <code>link lsp</code>。</p>
+<h2 id="_18">游戏后端<a class="headerlink" href="#_18" title="Permanent link">&para;</a></h2>
+<p><code>link game</code> 命令用于运行游戏后端域类型的程序：</p>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>link<span class="w"> </span>game<span class="w"> </span>mygame.link
+</code></pre></div>
+<p>功能特性：</p>
+<ul>
+<li><strong>domain 语法</strong>：声明式定义游戏域</li>
+<li><strong>WebSocket</strong>：内置 WebSocket 服务器</li>
+<li><strong>房间系统</strong>：玩家匹配与房间管理</li>
+<li><strong>帧同步</strong>：确定性帧同步机制</li>
+</ul>
+<h2 id="_19">命令行帮助<a class="headerlink" href="#_19" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>link<span class="w"> </span>compile<span class="w"> </span>--help
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>link<span class="w"> </span>lsp<span class="w"> </span>--help
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>link<span class="w"> </span>game<span class="w"> </span>--help
 </code></pre></div>
 
 

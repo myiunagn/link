@@ -1277,6 +1277,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1367,6 +1373,90 @@
     
   
     LLVM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/python-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/wasm-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WASM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/borrow-checker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    借用检查器
   
 
     
@@ -1996,6 +2086,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#phase-2-v01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎉 Phase 2 完成总结(v0.1 编译器)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#56-phase-2-12" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2588,6 +2689,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#phase-2-v01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎉 Phase 2 完成总结(v0.1 编译器)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#56-phase-2-12" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2680,9 +2792,9 @@
 
 <h1 id="link">Link 语言设计规格说明书<a class="headerlink" href="#link" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p><strong>版本</strong>: v0.1 (首个正式版本)
-<strong>日期</strong>: 2026-07-27
-<strong>状态</strong>: Phase 1 + Phase 2.1-2.2 已完成</p>
+<p><strong>版本</strong>: v0.2
+<strong>日期</strong>: 2026-07-28
+<strong>状态</strong>: Phase 1 + Phase 2.1-2.15 已完成</p>
 </blockquote>
 <hr />
 <h2 id="1">第 1 章:定位与核心理念<a class="headerlink" href="#1" title="Permanent link">&para;</a></h2>
@@ -3839,6 +3951,183 @@
 <p><strong>测试覆盖</strong>:174 个单元/集成测试全部通过</p>
 <p><strong>Demo 验证</strong>:<a href="https://github.com/myiunagn/link/blob/main/examples/multilang_demo.link">multilang_demo.link</a> 展示 Link 作为多语言胶水层的完整价值</p>
 <p><strong>下一步</strong>:Phase 2(LLVM 编译后端 + 游戏后端域类型),见 5.6 节</p>
+<h3 id="phase-2-v01">🎉 Phase 2 完成总结(v0.1 编译器)<a class="headerlink" href="#phase-2-v01" title="Permanent link">&para;</a></h3>
+<p><strong>Phase 2 前 11 个子阶段已完成</strong>,Link v0.1 编译器实现了:</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>C 后端</strong></td>
+<td>C 代码生成,支持 struct/enum/list/match/字符串拼接</td>
+</tr>
+<tr>
+<td><strong>LLVM 后端</strong></td>
+<td>LLVM IR 生成,PassManager 优化(条件编译)</td>
+</tr>
+<tr>
+<td><strong>类型检查器</strong></td>
+<td><code>linkc_sema</code> crate,42 个测试覆盖,支持 match 模式变量绑定</td>
+</tr>
+<tr>
+<td><strong>常量折叠优化</strong></td>
+<td>编译期常量表达式求值,支持算术/逻辑/字符串/列表操作</td>
+</tr>
+<tr>
+<td><strong>死代码消除</strong></td>
+<td>return/break/continue 后不可达代码自动删除</td>
+</tr>
+<tr>
+<td><strong>字符串格式化</strong></td>
+<td>支持 <code>{}</code> 占位符,自动根据参数类型选择 <code>%lld</code>/<code>%lf</code>/<code>%s</code></td>
+</tr>
+<tr>
+<td><strong>函数返回类型推断</strong></td>
+<td>预扫描所有函数签名,准确推断函数调用表达式的返回类型</td>
+</tr>
+<tr>
+<td><strong>编译器自动检测</strong></td>
+<td>自动检测 gcc/clang/cl/cc,给出友好的错误提示</td>
+</tr>
+<tr>
+<td><strong>内置函数</strong></td>
+<td>print/println/len/sleep 编译支持</td>
+</tr>
+<tr>
+<td><strong>优化等级</strong></td>
+<td>O0-O3,调试符号支持</td>
+</tr>
+<tr>
+<td><strong>CLI</strong></td>
+<td><code>link compile</code> 集成类型检查、常量折叠、死代码消除</td>
+</tr>
+<tr>
+<td><strong>完整 Demo</strong></td>
+<td><code>examples/compiler_demo.link</code> 综合演示</td>
+</tr>
+</tbody>
+</table>
+<p><strong>测试覆盖</strong>:245 个单元/集成测试全部通过</p>
+<p><strong>修复内容</strong>:
+- 修复 match 语句模式绑定变量未注册到作用域的问题
+- 修复枚举变体模式下函数返回类型推断问题
+- 修复函数调用返回 double 类型时 printf 错误使用 <code>%lld</code> 的问题
+- 类型检查 + 常量折叠 + 死代码消除完整集成到编译流水线</p>
+<h4 id="phase-214lsp">Phase 2.14:LSP 服务器 ✅<a class="headerlink" href="#phase-214lsp" title="Permanent link">&para;</a></h4>
+<p><strong>目标</strong>:为编辑器提供语言智能支持,替代 VSCode 扩展中简陋的 <code>spawnSync</code> 诊断方案。</p>
+<p><strong>交付物</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>linkc_lsp</code> crate</td>
+<td>完整的 LSP 服务器实现,JSON-RPC over stdio</td>
+</tr>
+<tr>
+<td>文档诊断</td>
+<td>集成 lexer/parser/sema,实时发布 <code>textDocument/publishDiagnostics</code></td>
+</tr>
+<tr>
+<td>自动补全</td>
+<td>关键字(35+) + 内置函数(35+) + 内置类型(16) + 文档符号</td>
+</tr>
+<tr>
+<td>悬停提示</td>
+<td>函数签名 / 结构体定义 / 枚举定义 / 内置函数文档</td>
+</tr>
+<tr>
+<td>跳转定义</td>
+<td>函数 / 变量 / 结构体 / 枚举 / 模块声明位置</td>
+</tr>
+<tr>
+<td>文档符号</td>
+<td>大纲视图,支持 Function / Struct / Enum / Variable / Module</td>
+</tr>
+<tr>
+<td>CLI 集成</td>
+<td><code>link lsp</code> 子命令启动服务器</td>
+</tr>
+<tr>
+<td>VSCode 扩展</td>
+<td>使用 <code>vscode-languageclient</code> v9,支持 trace 配置</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong>:</p>
+<ul>
+<li>三层架构:<code>jsonrpc</code>(协议层) → <code>analysis</code>(文档分析) → <code>server</code>(LSP 功能分发)</li>
+<li><code>lex_safe</code> 预扫描源码,将 lexer panic(非法字符 / 未终止字符串)转化为诊断,保证服务器永不崩溃</li>
+<li>全量文档同步(<code>textDocumentSync: 1</code>),每次变更重新分析并推送诊断</li>
+<li>符号收集器遍历 AST 顶层语句,记录函数 / 结构体 / 枚举 / let / mod 声明的位置和签名</li>
+<li>位置映射使用 <code>line_starts</code> 二分查找,offset → (line, col) 转换 O(log n)</li>
+<li>e2e 集成测试通过子进程启动 <code>link lsp</code>,验证完整 JSON-RPC 协议栈</li>
+</ul>
+<p><strong>测试覆盖</strong>:17 个单元测试 + 7 个 e2e 集成测试,工作区总计 294 个测试全部通过</p>
+<h4 id="phase-215">Phase 2.15:游戏后端域类型 ✅<a class="headerlink" href="#phase-215" title="Permanent link">&para;</a></h4>
+<p><strong>目标</strong>:实现 <code>domain</code> 语法 + WebSocket 帧同步服务器,验证游戏后端域类型设计。</p>
+<p><strong>交付物</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>domain</code> 关键字</td>
+<td>Lexer/Parser/Interpreter 全链路支持 <code>domain Name { key: value }</code> 声明语法</td>
+</tr>
+<tr>
+<td>WebSocket 服务器</td>
+<td><code>tokio-tungstenite</code> 实现,支持浏览器/小程序客户端</td>
+</tr>
+<tr>
+<td>房间(Room)系统</td>
+<td>多房间隔离,动态创建,支持 join/leave/chat 消息</td>
+</tr>
+<tr>
+<td>实体(Entity)系统</td>
+<td>玩家(Player) + 道具(coin),含位置/速度/得分/HP 属性</td>
+</tr>
+<tr>
+<td>帧同步循环</td>
+<td>固定 tick rate(默认 60 FPS),每帧更新状态并广播 JSON 快照</td>
+</tr>
+<tr>
+<td>碰撞检测</td>
+<td>玩家与道具的圆形碰撞检测,拾取后加分并生成事件</td>
+</tr>
+<tr>
+<td>CLI 集成</td>
+<td><code>link game &lt;file.link&gt; [domain]</code> 子命令启动游戏服务器</td>
+</tr>
+<tr>
+<td>示例程序</td>
+<td><code>examples/game_server.link</code> + <code>examples/game_client.html</code> 完整 Demo</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现要点</strong>:</p>
+<ul>
+<li>Lexer 新增 <code>Domain</code> 关键字;Parser 新增 <code>Stmt::DomainDecl { name, config }</code> AST 节点</li>
+<li>Interpreter 将 <code>domain</code> 声明求值为 <code>Value::StructInstance</code>,字段即配置项</li>
+<li><code>game.rs</code> 实现三层架构:<code>GameState</code>(全局多房间) → <code>Room</code>(单房间状态) → <code>Player</code>/<code>Entity</code>(实体)</li>
+<li>WebSocket 消息协议:<code>join</code>/<code>input</code>/<code>chat</code>/<code>leave</code> 四种客户端消息;<code>state</code>/<code>joined</code> 两种服务端消息</li>
+<li>客户端输入驱动物理模拟:方向键 → <code>apply_input</code> → <code>update</code>(位置+摩擦力+边界约束)</li>
+<li>避免引入 <code>rand</code> 依赖,使用静态原子种子实现 LCG 伪随机数生成器</li>
+<li><code>config_from_link</code> 从解释器生成的 StructInstance 中解析 <code>GameServerConfig</code></li>
+</ul>
+<p><strong>测试覆盖</strong>:6 个单元测试(玩家移动/房间增删/碰撞拾取/多房间/配置解析/快照格式),工作区总计 300+ 测试全部通过</p>
 <h3 id="56-phase-2-12">5.6 Phase 2:编译期 + 游戏后端(约 12 周)<a class="headerlink" href="#56-phase-2-12" title="Permanent link">&para;</a></h3>
 <p><strong>目标</strong>:LLVM 编译上线,游戏后端域加入。</p>
 <p><strong>交付物</strong>:

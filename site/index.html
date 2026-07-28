@@ -1392,6 +1392,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1482,6 +1488,90 @@
     
   
     LLVM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="compiler/python-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="compiler/wasm-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WASM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="compiler/borrow-checker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    借用检查器
   
 
     
@@ -1708,8 +1798,8 @@
 
 <hr />
 <div class="admonition tip">
-<p class="admonition-title">v0.1 已发布</p>
-<p>当前版本支持:基本类型、控制流、函数、列表、<code>stream&lt;T&gt;</code> 数据流、struct/enum 复合类型、async/await、flow 声明块、<strong>全球 12 种编程语言 FFI 互联</strong>、<strong>C/LLVM 编译器后端</strong>。</p>
+<p class="admonition-title">v0.2.0 已发布</p>
+<p>当前版本支持:基本类型、控制流、函数、列表、<code>stream&lt;T&gt;</code> 数据流、struct/enum 复合类型、async/await、flow 声明块、<strong>全球 12 种编程语言 FFI 互联</strong>、<strong>C/LLVM/Python/WASM 编译器后端</strong>、<strong>借用检查器</strong>、<strong>LSP 语言服务器</strong>、<strong>游戏后端域类型</strong>。</p>
 </div>
 <h2 id="_1">核心特性<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
 <div class="grid cards">
@@ -1732,9 +1822,28 @@ C / C++ / Python / WASM / Java / JS / Go / Rust / C# / PHP / Ruby / Swift / Kotl
 <p>类型严谨如 C++,声明优先如 Terraform。描述"要什么",不描述"怎么做"。</p>
 </li>
 <li>
-<p>:material-flash: <strong>原生码编译</strong></p>
+<p>:material-cog: <strong>多后端编译</strong></p>
 <hr />
-<p>支持 C 代码生成和 LLVM IR 后端。O0-O3 优化等级,调试符号支持。无 GC,无运行时开销。</p>
+<p>支持 C / LLVM / Python / WASM 四种编译后端。
+常量折叠、死代码消除优化，无 GC，无运行时开销。</p>
+</li>
+<li>
+<p>:material-shield-check: <strong>借用检查器</strong></p>
+<hr />
+<p>编译时所有权跟踪、移动语义、Copy 类型、借用规则。
+use-after-move 检测，内存安全无负担。</p>
+</li>
+<li>
+<p>:material-microsoft-visual-studio-code: <strong>LSP 语言服务器</strong></p>
+<hr />
+<p>诊断、补全、悬停、跳转、符号大纲。
+支持 VS Code 等主流编辑器，开发体验一流。</p>
+</li>
+<li>
+<p>:material-gamepad-variant: <strong>游戏后端域类型</strong></p>
+<hr />
+<p><code>domain</code> 语法、WebSocket、房间系统、帧同步。
+专为游戏后端设计的声明式抽象。</p>
 </li>
 </ul>
 </div>
@@ -1889,12 +1998,52 @@ C / C++ / Python / WASM / Java / JS / Go / Rust / C# / PHP / Ruby / Swift / Kotl
 <tr>
 <td>Phase 2.1:C 后端</td>
 <td>:material-check-circle:{.green} 完成</td>
-<td>C 代码生成,优化等级 O0-O3</td>
+<td>完整 C 代码生成,优化等级 O0-O3</td>
 </tr>
 <tr>
 <td>Phase 2.2:LLVM 后端</td>
 <td>:material-check-circle:{.green} 完成</td>
-<td>LLVM IR 生成,优化通道</td>
+<td>LLVM IR 生成,优化通道(条件编译)</td>
+</tr>
+<tr>
+<td>Phase 2.3:Python 后端</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>生成 Python 代码</td>
+</tr>
+<tr>
+<td>Phase 2.4:WASM 后端</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>生成 WAT 格式代码</td>
+</tr>
+<tr>
+<td>Phase 2.5:类型检查器</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>54 个测试用例</td>
+</tr>
+<tr>
+<td>Phase 2.6:常量折叠优化</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>编译期常量表达式求值</td>
+</tr>
+<tr>
+<td>Phase 2.7:死代码消除</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>移除不可达代码</td>
+</tr>
+<tr>
+<td>Phase 2.8:借用检查器</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>所有权跟踪、use-after-move 检测</td>
+</tr>
+<tr>
+<td>Phase 2.9:LSP 语言服务器</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>诊断、补全、悬停、跳转、符号大纲</td>
+</tr>
+<tr>
+<td>Phase 2.10:游戏后端域类型</td>
+<td>:material-check-circle:{.green} 完成</td>
+<td>domain 语法、WebSocket、房间系统、帧同步</td>
 </tr>
 </tbody>
 </table>

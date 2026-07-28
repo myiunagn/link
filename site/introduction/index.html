@@ -1445,6 +1445,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1535,6 +1541,90 @@
     
   
     LLVM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/python-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/wasm-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WASM 后端
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compiler/borrow-checker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    借用检查器
   
 
     
@@ -1805,8 +1895,8 @@
 <ul>
 <li>以多语言互联为第一切入点</li>
 <li>延展到游戏后端与 IoT 设备互联</li>
-<li>编译为原生码(LLVM 路线图进行中)</li>
-<li>当前 v0.1 为解释器版本,用于验证语言设计与 FFI 设计</li>
+<li>多后端编译: C / LLVM / Python / WASM</li>
+<li>当前 v0.2.0 版本,支持完整编译、借用检查、LSP 语言服务器</li>
 </ul>
 <h2 id="_2">一句话定位<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
 <blockquote>
@@ -1877,7 +1967,7 @@
 <tr>
 <td><code>stream&lt;T&gt;</code></td>
 <td>数据流,Link 的灵魂</td>
-<td>:material-clock-outline:{.yellow} 规划中</td>
+<td>:material-check-circle:{.green} 已实现</td>
 </tr>
 <tr>
 <td><code>endpoint</code></td>
@@ -1894,24 +1984,53 @@
 <td>多语言互操作</td>
 <td>:material-check-circle:{.green} 已实现</td>
 </tr>
+<tr>
+<td><code>domain</code></td>
+<td>游戏后端域类型</td>
+<td>:material-check-circle:{.green} 已实现</td>
+</tr>
+<tr>
+<td>借用检查器</td>
+<td>所有权与内存安全</td>
+<td>:material-check-circle:{.green} 已实现</td>
+</tr>
+<tr>
+<td>LSP 语言服务器</td>
+<td>编辑器智能支持</td>
+<td>:material-check-circle:{.green} 已实现</td>
+</tr>
 </tbody>
 </table>
 <h2 id="_5">当前版本能做什么<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
-<p>v0.1 已实现:</p>
+<p>v0.2.0 已实现:</p>
 <ul>
-<li>基本类型:<code>int</code> / <code>float</code> / <code>str</code> / <code>bool</code> / <code>none</code> / <code>list</code></li>
-<li>运算符:算术、比较、逻辑</li>
+<li>基本类型:<code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code>/<code>u8</code>/<code>u16</code>/<code>u32</code>/<code>u64</code>/<code>usize</code> / <code>f32</code>/<code>f64</code> / <code>str</code> / <code>bool</code> / <code>none</code> / <code>list&lt;T&gt;</code></li>
+<li>运算符:算术、比较、逻辑、管道运算符 <code>|</code></li>
 <li>控制流:<code>if/else</code> / <code>while</code> / <code>for</code> / <code>loop</code> / <code>break</code> / <code>continue</code></li>
 <li>函数:声明、递归、闭包作用域</li>
 <li>内置函数:<code>print</code> / <code>println</code> / <code>len</code></li>
 <li>列表:字面量、索引、嵌套</li>
+<li><strong>复合类型</strong>:struct / enum + match 模式匹配</li>
+<li><strong>数据流</strong>: <code>stream&lt;T&gt;</code> + 管道运算符</li>
+<li><strong>声明式</strong>: <code>flow</code> 声明块</li>
+<li><strong>异步编程</strong>: async/await</li>
 <li><strong>FFI</strong>:<ul>
-<li>C 标准库(<code>libc.so.6</code> / <code>msvcrt.dll</code>)</li>
-<li>Python 标准库(<code>math</code> / <code>os</code> / 任意模块)</li>
-<li>C++ 共享库(通过 <code>extern "C"</code> 桥接)</li>
+<li>全球 12 种编程语言: C / C++ / Python / WASM / Java / JS / Go / Rust / C# / PHP / Ruby / Swift / Kotlin</li>
+<li>bindgen: C/Python/TypeScript 绑定生成</li>
 </ul>
 </li>
-<li>运行模式:<code>link run &lt;file&gt;</code> 文件执行,<code>link repl</code> 交互式 REPL</li>
+<li><strong>编译后端</strong>:<ul>
+<li>C 后端:完整 C 代码生成,优化等级 O0-O3</li>
+<li>LLVM 后端: LLVM IR 生成(条件编译)</li>
+<li>Python 后端: 生成 Python 代码</li>
+<li>WASM 后端: 生成 WAT 格式代码</li>
+</ul>
+</li>
+<li><strong>优化</strong>: 常量折叠、死代码消除</li>
+<li><strong>借用检查器</strong>: 所有权跟踪、移动语义、Copy 类型、use-after-move 检测</li>
+<li><strong>LSP 语言服务器</strong>: 诊断、补全、悬停、跳转、符号大纲</li>
+<li><strong>游戏后端域类型</strong>: domain 语法、WebSocket、房间系统、帧同步</li>
+<li>运行模式:<code>link run &lt;file&gt;</code> 文件执行,<code>link repl</code> 交互式 REPL,<code>link compile</code> 编译</li>
 </ul>
 <h2 id="_6">设计哲学<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
 <ol>
@@ -1936,6 +2055,11 @@
 <td>:material-check-circle:{.green} 完成</td>
 </tr>
 <tr>
+<td><strong>Phase 1</strong></td>
+<td><strong>多语言互联 + 语言特性</strong></td>
+<td>:material-check-circle:{.green} <strong>全部完成</strong></td>
+</tr>
+<tr>
 <td>Phase 1.1</td>
 <td>C FFI 基础</td>
 <td>:material-check-circle:{.green} 完成</td>
@@ -1947,18 +2071,88 @@
 </tr>
 <tr>
 <td>Phase 1.3</td>
-<td><code>stream&lt;T&gt;</code> 数据流核心类型</td>
-<td>:material-clock-outline:{.yellow} 进行中</td>
+<td><code>stream&lt;T&gt;</code> 数据流核心类型 + 管道运算符</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 1.4</td>
+<td>多语言 FFI (12 种语言)</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 1.5</td>
+<td>struct/enum + match 模式匹配</td>
+<td>:material-check-circle:{.green} 完成</td>
 </tr>
 <tr>
 <td>Phase 1.6</td>
-<td><code>export "C"</code> 头文件生成</td>
-<td>:material-clock-outline:{.yellow} 规划中</td>
+<td>bindgen: C/Python/TypeScript 绑定生成</td>
+<td>:material-check-circle:{.green} 完成</td>
 </tr>
 <tr>
-<td>Phase 2</td>
-<td>LLVM 后端,原生码编译</td>
-<td>:material-clock-outline:{.yellow} 规划中</td>
+<td>Phase 1.7</td>
+<td>flow 声明块</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 1.8</td>
+<td>async/await 异步编程</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td><strong>Phase 2</strong></td>
+<td><strong>编译器 + 工具链</strong></td>
+<td>:material-check-circle:{.green} <strong>全部完成</strong></td>
+</tr>
+<tr>
+<td>Phase 2.1</td>
+<td>C 后端:完整 C 代码生成</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.2</td>
+<td>LLVM 后端: LLVM IR 生成</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.3</td>
+<td>Python 后端: 生成 Python 代码</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.4</td>
+<td>WASM 后端: 生成 WAT 格式代码</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.5</td>
+<td>类型检查器 (54 个测试)</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.6</td>
+<td>常量折叠优化</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.7</td>
+<td>死代码消除</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.8</td>
+<td>借用检查器: 所有权跟踪、use-after-move 检测</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.9</td>
+<td>LSP 语言服务器: 诊断、补全、悬停、跳转、符号大纲</td>
+<td>:material-check-circle:{.green} 完成</td>
+</tr>
+<tr>
+<td>Phase 2.10</td>
+<td>游戏后端域类型: domain 语法、WebSocket、房间系统、帧同步</td>
+<td>:material-check-circle:{.green} 完成</td>
 </tr>
 <tr>
 <td>Phase 3</td>
