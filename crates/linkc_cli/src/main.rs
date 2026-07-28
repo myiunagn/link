@@ -78,7 +78,7 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  -o <path>           Output path (default: input file stem)");
-    println!("  --backend <type>    Codegen backend: c (default) | llvm | python");
+    println!("  --backend <type>    Codegen backend: c (default) | llvm | python | wasm");
     println!("  --emit-c            Emit C code (C backend only)");
     println!("  --emit-ir           Emit LLVM IR (LLVM backend only)");
     println!("  --opt-level <N>     Optimization level: 0-3 (default: 2)");
@@ -90,6 +90,8 @@ fn print_help() {
     println!("  link compile myfile.link --backend llvm --emit-ir");
     println!("  link compile myfile.link --opt-level 3 -g");
     println!("  link compile myfile.link --emit-c -o output.c");
+    println!("  link compile myfile.link --backend python -o output.py");
+    println!("  link compile myfile.link --backend wasm -o output.wat");
     println!();
     println!("bindgen usage:");
     println!("  link bindgen --lang <lang> <input.link> [-o <output>] [--module <name>]");
@@ -121,7 +123,7 @@ fn run_compile(args: &[String]) -> Result<(), String> {
             "--backend" => {
                 i += 1;
                 if i >= args.len() {
-                    return Err("--backend requires a value (c | llvm | python)".to_string());
+                    return Err("--backend requires a value (c | llvm | python | wasm)".to_string());
                 }
                 backend = args[i].clone();
             }
@@ -169,6 +171,14 @@ fn run_compile(args: &[String]) -> Result<(), String> {
         return Err(format!("Type checking failed with {} error(s)", errors.len()));
     }
 
+    let borrow_errors = linkc_sema::check_borrow(&program);
+    if !borrow_errors.is_empty() {
+        for err in &borrow_errors {
+            eprintln!("{}", err);
+        }
+        return Err(format!("Borrow checking failed with {} error(s)", borrow_errors.len()));
+    }
+
     let program = linkc_sema::const_fold(&program);
     let program = linkc_sema::eliminate_dead_code(&program);
 
@@ -184,6 +194,7 @@ fn run_compile(args: &[String]) -> Result<(), String> {
             if emit_c { format!("{}.c", stem) }
             else if emit_ir { format!("{}.ll", stem) }
             else if backend == "python" { format!("{}.py", stem) }
+            else if backend == "wasm" { format!("{}.wat", stem) }
             else { stem.clone() }
         }
     };
@@ -222,8 +233,14 @@ fn run_compile(args: &[String]) -> Result<(), String> {
                 .map_err(|e| format!("Cannot write to '{}': {}", output_path, e))?;
             println!("Generated Python code: {}", output_path);
         }
+        "wasm" => {
+            let wat_code = linkc_codegen::compile_to_wasm(&program)?;
+            fs::write(&output_path, wat_code)
+                .map_err(|e| format!("Cannot write to '{}': {}", output_path, e))?;
+            println!("Generated WebAssembly (WAT) code: {}", output_path);
+        }
         other => {
-            return Err(format!("Unknown backend: '{}' (supported: c, llvm, python)", other));
+            return Err(format!("Unknown backend: '{}' (supported: c, llvm, python, wasm)", other));
         }
     }
 

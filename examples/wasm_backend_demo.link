@@ -1,0 +1,87 @@
+// WASM Backend Demo
+// This file demonstrates Link's WebAssembly backend capabilities
+
+fn add(a: i64, b: i64) -> i64 {
+    return a + b;
+}
+
+fn factorial(n: i64) -> i64 {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+fn fibonacci(n: i64) -> i64 {
+    if n <= 1 {
+        return n;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+fn is_even(n: i64) -> i64 {
+    if n % 2 == 0 {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+fn abs(x: i64) -> i64 {
+    if x < 0 {
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+fn sum_range(n: i64) -> i64 {
+    let sum: i64 = 0;
+    let i: i64 = 0;
+    while i < n {
+        sum = sum + i;
+        i = i + 1;
+    }
+    return sum;
+}
+
+fn power(base: i64, exp: i64) -> i64 {
+    let result: i64 = 1;
+    let i: i64 = 0;
+    while i < exp {
+        result = result * base;
+        i = i + 1;
+    }
+    return result;
+}
+
+fn gcd(a: i64, b: i64) -> i64 {
+    while b != 0 {
+        let temp: i64 = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+fn main() -> i64 {
+    // Test basic arithmetic
+    let x = add(10, 20);
+    let y = factorial(5);
+    let z = fibonacci(10);
+
+    // Test control flow
+    let check1 = is_even(42);
+    let check2 = is_even(17);
+
+    // Test loops
+    let total = sum_range(10);
+
+    // Test utility functions
+    let neg = abs(-42);
+    let pow = power(2, 10);
+    let gcd_val = gcd(48, 18);
+
+    // Return sum of all results
+    return x + y + z + check1 + check2 + total + neg + pow + gcd_val;
+}

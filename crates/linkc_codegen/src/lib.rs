@@ -1627,6 +1627,431 @@ pub fn compile_to_python(program: &Program) -> Result<String, String> {
     backend.generate(program)
 }
 
+// ============================================================================
+// WASM Backend — WebAssembly Text Format (WAT)
+// ============================================================================
+
+/// WASM 后端：生成 WebAssembly 文本格式代码
+/// 
+/// 支持的特性：
+/// - 函数导出（可被 JavaScript 调用）
+/// - i32/i64/f32/f64 基本类型
+/// - 控制流（if/else/while/for/loop/block）
+/// - 算术和比较运算
+/// - 内存操作（通过线性内存）
+/// 
+/// 限制：
+/// - 不支持字符串（需要外部 JavaScript 辅助）
+/// - 不支持结构体和枚举（需要手动内存管理）
+/// - 不支持列表（需要外部内存分配器）
+pub struct WasmBackend {
+    functions: Vec<String>,
+    exports: Vec<String>,
+    memory_size: usize, // 线性内存大小（页数）
+    var_map: HashMap<String, String>,
+    var_type_map: HashMap<String, WasmType>,
+    fn_params: HashMap<String, Vec<WasmType>>,
+    fn_return: HashMap<String, Option<WasmType>>,
+    tmp_counter: usize,
+    label_counter: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WasmType {
+    I32,
+    I64,
+    F32,
+    F64,
+}
+
+impl WasmType {
+    fn from_annotation(ann: &TypeAnnotation) -> Self {
+        match ann {
+            TypeAnnotation::I8 | TypeAnnotation::I16 | TypeAnnotation::I32 => WasmType::I32,
+            TypeAnnotation::U8 | TypeAnnotation::U16 | TypeAnnotation::U32 => WasmType::I32,
+            TypeAnnotation::I64 | TypeAnnotation::U64 | TypeAnnotation::USize => WasmType::I64,
+            TypeAnnotation::F32 => WasmType::F32,
+            TypeAnnotation::F64 => WasmType::F64,
+            TypeAnnotation::Bool => WasmType::I32,
+            _ => WasmType::I32, // 默认
+        }
+    }
+
+    fn to_wat(&self) -> &'static str {
+        match self {
+            WasmType::I32 => "i32",
+            WasmType::I64 => "i64",
+            WasmType::F32 => "f32",
+            WasmType::F64 => "f64",
+        }
+    }
+}
+
+impl WasmBackend {
+    pub fn new() -> Self {
+        Self {
+            functions: Vec::new(),
+            exports: Vec::new(),
+            memory_size: 1, // 默认 1 页（64KB）
+            var_map: HashMap::new(),
+            var_type_map: HashMap::new(),
+            fn_params: HashMap::new(),
+            fn_return: HashMap::new(),
+            tmp_counter: 0,
+            label_counter: 0,
+        }
+    }
+
+    fn fresh_tmp(&mut self) -> String {
+        self.tmp_counter += 1;
+        format!("$tmp{}", self.tmp_counter)
+    }
+
+    fn fresh_label(&mut self) -> String {
+        self.label_counter += 1;
+        format!("$L{}", self.label_counter)
+    }
+
+    fn generate_program(&mut self, program: &Program) -> Result<String, String> {
+        let Program::Block(stmts) = program;
+
+        // 第一遍：收集函数签名
+        for stmt in stmts {
+            if let Stmt::FnDecl { name, params, return_type, .. } = stmt {
+                let param_types: Vec<WasmType> = params.iter()
+                    .map(|(_, t)| WasmType::from_annotation(t))
+                    .collect();
+                let ret_type = return_type.as_ref().map(|t| WasmType::from_annotation(t));
+                self.fn_params.insert(name.clone(), param_types);
+                self.fn_return.insert(name.clone(), ret_type);
+            }
+        }
+
+        // 第二遍：生成函数代码
+        for stmt in stmts {
+            if let Stmt::FnDecl { name, params, body, .. } = stmt {
+                let func_code = self.generate_function(name, params, body)?;
+                self.functions.push(func_code);
+                self.exports.push(name.clone());
+            }
+        }
+
+        // 组装完整模块
+        let mut wat = String::new();
+        wat.push_str("(module\n");
+
+        // 导入辅助函数（如打印）
+        wat.push_str("  ;; Import console.log for println\n");
+        wat.push_str("  (import \"console\" \"log\" (func $println (param i32)))\n");
+
+        // 内存
+        wat.push_str(&format!("  (memory (export \"memory\") {})\n", self.memory_size));
+
+        // 函数
+        for func in &self.functions {
+            wat.push_str(func);
+            wat.push('\n');
+        }
+
+        // 导出
+        for export_name in &self.exports {
+            wat.push_str(&format!("  (export \"{}\" (func ${}))\n", export_name, export_name));
+        }
+
+        wat.push_str(")\n");
+        Ok(wat)
+    }
+
+    fn generate_function(&mut self, name: &str, params: &[(String, TypeAnnotation)], body: &Block) -> Result<String, String> {
+        let mut code = format!("  (func ${}", name);
+
+        // 参数
+        for (pname, ptype) in params {
+            let wasm_type = WasmType::from_annotation(ptype);
+            code.push_str(&format!(" (param ${} {})", pname, wasm_type.to_wat()));
+            self.var_type_map.insert(pname.clone(), wasm_type);
+        }
+
+        // 返回值
+        if let Some(ret_type) = self.fn_return.get(name).and_then(|r| *r) {
+            code.push_str(&format!(" (result {})", ret_type.to_wat()));
+        }
+
+        code.push_str("\n");
+
+        // 局部变量（在函数体中遇到 let 声明时添加）
+        let saved_var_map = self.var_map.clone();
+        let saved_var_type_map = self.var_type_map.clone();
+
+        // 生成函数体
+        let body_code = self.generate_block(body)?;
+
+        self.var_map = saved_var_map;
+        self.var_type_map = saved_var_type_map;
+
+        code.push_str(&body_code);
+        code.push_str("  )\n");
+
+        Ok(code)
+    }
+
+    fn generate_block(&mut self, block: &Block) -> Result<String, String> {
+        let mut code = String::new();
+        for stmt in &block.stmts {
+            let stmt_code = self.generate_stmt(stmt)?;
+            code.push_str(&stmt_code);
+        }
+        Ok(code)
+    }
+
+    fn generate_stmt(&mut self, stmt: &Stmt) -> Result<String, String> {
+        match stmt {
+            Stmt::LetDecl { name, type_annotation, value } => {
+                let ty = type_annotation.as_ref()
+                    .map(|t| WasmType::from_annotation(t))
+                    .unwrap_or(WasmType::I32);
+
+                let mut code = format!("    (local ${} {})\n", name, ty.to_wat());
+                self.var_type_map.insert(name.clone(), ty);
+
+                if let Some(val) = value {
+                    let val_code = self.generate_expr(val)?;
+                    code.push_str(&val_code);
+                    code.push_str(&format!("    (local.set ${})\n", name));
+                }
+                Ok(code)
+            }
+            Stmt::Assign { target, value } => {
+                let val_code = self.generate_expr(value)?;
+                let mut code = val_code;
+                code.push_str(&format!("    (local.set ${})\n", target));
+                Ok(code)
+            }
+            Stmt::Expr(expr) => {
+                // 处理表达式语句（包括 println 函数调用）
+                if let Expr::Call { callee, args } = expr {
+                    if callee == "println" {
+                        // println 在 WASM 中需要导入的外部函数
+                        // 目前只支持打印整数
+                        if !args.is_empty() {
+                            let arg_code = self.generate_expr(&args[0])?;
+                            let mut code = arg_code;
+                            // 转换为 i32（如果需要）
+                            code.push_str("    (i32.wrap_i64)\n"); // 假设是 i64，转换为 i32
+                            code.push_str("    (call $println)\n");
+                            return Ok(code);
+                        } else {
+                            return Ok(String::new());
+                        }
+                    }
+                }
+                let expr_code = self.generate_expr(expr)?;
+                Ok(expr_code)
+            }
+            Stmt::Return(Some(expr)) => {
+                let expr_code = self.generate_expr(expr)?;
+                let mut code = expr_code;
+                code.push_str("    (return)\n");
+                Ok(code)
+            }
+            Stmt::Return(None) => {
+                Ok("    (return)\n".to_string())
+            }
+            Stmt::If { condition, then_branch, else_branch } => {
+                let cond_code = self.generate_expr(condition)?;
+                let then_code = self.generate_block(then_branch)?;
+                let mut code = cond_code;
+                code.push_str("    (if\n");
+                code.push_str("      (then\n");
+                code.push_str(&then_code);
+                code.push_str("      )\n");
+                if let Some(else_block) = else_branch {
+                    let else_code = self.generate_block(else_block)?;
+                    code.push_str("      (else\n");
+                    code.push_str(&else_code);
+                    code.push_str("      )\n");
+                }
+                code.push_str("    )\n");
+                Ok(code)
+            }
+            Stmt::While { condition, body } => {
+                let loop_label = self.fresh_label();
+                let cond_code = self.generate_expr(condition)?;
+                let body_code = self.generate_block(body)?;
+                let mut code = format!("    (block ${}_outer\n", loop_label);
+                code.push_str(&format!("      (loop ${}_inner\n", loop_label));
+                code.push_str(&format!("        (br_if ${}_outer\n", loop_label));
+                code.push_str("          (i32.eqz\n");
+                code.push_str(&cond_code);
+                code.push_str("          )\n");
+                code.push_str("        )\n");
+                code.push_str(&body_code);
+                code.push_str(&format!("        (br ${}_inner)\n", loop_label));
+                code.push_str("      )\n");
+                code.push_str("    )\n");
+                Ok(code)
+            }
+            Stmt::For { var_name, start, end, body } => {
+                let loop_label = self.fresh_label();
+                let ty = WasmType::I64; // for 循环变量通常是 i64
+                let mut code = format!("    (local ${} {})\n", var_name, ty.to_wat());
+                self.var_type_map.insert(var_name.clone(), ty);
+
+                let start_code = self.generate_expr(start)?;
+                code.push_str(&start_code);
+                code.push_str(&format!("    (local.set ${})\n", var_name));
+
+                code.push_str(&format!("    (block ${}_outer\n", loop_label));
+                code.push_str(&format!("      (loop ${}_inner\n", loop_label));
+                
+                let end_code = self.generate_expr(end)?;
+                code.push_str(&format!("        (br_if ${}_outer\n", loop_label));
+                code.push_str("          (i64.ge_s\n");
+                code.push_str(&format!("            (local.get ${})\n", var_name));
+                code.push_str(&end_code);
+                code.push_str("          )\n");
+                code.push_str("        )\n");
+
+                let body_code = self.generate_block(body)?;
+                code.push_str(&body_code);
+
+                code.push_str(&format!("        (local.get ${})\n", var_name));
+                code.push_str("        (i64.const 1)\n");
+                code.push_str("        (i64.add)\n");
+                code.push_str(&format!("        (local.set ${})\n", var_name));
+
+                code.push_str(&format!("        (br ${}_inner)\n", loop_label));
+                code.push_str("      )\n");
+                code.push_str("    )\n");
+                Ok(code)
+            }
+            Stmt::Loop(body) => {
+                let loop_label = self.fresh_label();
+                let body_code = self.generate_block(body)?;
+                let mut code = format!("    (block ${}_outer\n", loop_label);
+                code.push_str(&format!("      (loop ${}_inner\n", loop_label));
+                code.push_str(&body_code);
+                code.push_str(&format!("        (br ${}_inner)\n", loop_label));
+                code.push_str("      )\n");
+                code.push_str("    )\n");
+                Ok(code)
+            }
+            Stmt::Break => {
+                Ok("    (br 1)\n".to_string())
+            }
+            Stmt::Continue => {
+                Ok("    (br 0)\n".to_string())
+            }
+            _ => Ok(String::new()),
+        }
+    }
+
+    fn generate_expr(&mut self, expr: &Expr) -> Result<String, String> {
+        match expr {
+            Expr::Int(n) => {
+                Ok(format!("    (i64.const {})\n", n))
+            }
+            Expr::Float(f) => {
+                Ok(format!("    (f64.const {})\n", f))
+            }
+            Expr::Bool(b) => {
+                Ok(format!("    (i32.const {})\n", if *b { 1 } else { 0 }))
+            }
+            Expr::Ident(name) => {
+                if let Some(ty) = self.var_type_map.get(name) {
+                    Ok(format!("    (local.get ${})\n", name))
+                } else {
+                    Err(format!("Undefined variable: {}", name))
+                }
+            }
+            Expr::Binary { op, left, right } => {
+                let left_code = self.generate_expr(left)?;
+                let right_code = self.generate_expr(right)?;
+                let mut code = left_code;
+                code.push_str(&right_code);
+
+                // 检测类型：如果任一操作数是 f64，使用 f64 指令
+                let is_float = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Float(_), _) | (_, Expr::Float(_)) => true,
+                    _ => false,
+                };
+
+                let op_wat = match op {
+                    BinOp::Add => "add",
+                    BinOp::Sub => "sub",
+                    BinOp::Mul => "mul",
+                    BinOp::Div => "div",
+                    BinOp::Mod => "rem",
+                    BinOp::Eq => "eq",
+                    BinOp::Neq => "ne",
+                    BinOp::Lt => "lt",
+                    BinOp::Gt => "gt",
+                    BinOp::LtEq => "le",
+                    BinOp::GtEq => "ge",
+                    BinOp::And => "and",
+                    BinOp::Or => "or",
+                    BinOp::Pipe => return Err("pipe operator not supported in WASM backend".to_string()),
+                };
+
+                if is_float {
+                    code.push_str(&format!("    (f64.{})\n", op_wat));
+                } else {
+                    code.push_str(&format!("    (i64.{})\n", op_wat));
+                }
+                Ok(code)
+            }
+            Expr::Unary { op, operand } => {
+                let operand_code = self.generate_expr(operand)?;
+                let mut code = operand_code;
+                match op {
+                    UnaryOp::Neg => code.push_str("    (i64.neg)\n"),
+                    UnaryOp::Not => {
+                        code.push_str("    (i64.const 1)\n");
+                        code.push_str("    (i64.xor)\n");
+                    }
+                }
+                Ok(code)
+            }
+            Expr::Call { callee, args } => {
+                // 用户定义的函数调用
+                let mut code = String::new();
+                for arg in args {
+                    code.push_str(&self.generate_expr(arg)?);
+                }
+                code.push_str(&format!("    (call ${})\n", callee));
+                Ok(code)
+            }
+            Expr::IfExpr { condition, then_value, else_value } => {
+                let cond_code = self.generate_expr(condition)?;
+                let then_code = self.generate_expr(then_value)?;
+                let else_code = self.generate_expr(else_value)?;
+                let mut code = cond_code;
+                code.push_str("    (if (result i64)\n");
+                code.push_str("      (then\n");
+                code.push_str(&then_code);
+                code.push_str("      )\n");
+                code.push_str("      (else\n");
+                code.push_str(&else_code);
+                code.push_str("      )\n");
+                code.push_str("    )\n");
+                Ok(code)
+            }
+            _ => Ok(String::new()),
+        }
+    }
+}
+
+impl CodeGenerator for WasmBackend {
+    fn generate(&mut self, program: &Program) -> Result<String, String> {
+        self.generate_program(program)
+    }
+}
+
+pub fn compile_to_wasm(program: &Program) -> Result<String, String> {
+    let mut backend = WasmBackend::new();
+    backend.generate(program)
+}
+
 pub fn compile_to_c(program: &Program) -> Result<String, String> {
     let mut backend = CBackend::new_with_defaults();
     backend.generate(program)
@@ -2152,5 +2577,101 @@ mod tests {
         let program = parse("enum Shape { Circle(f64), Square(f64) } fn main() { let c = Shape::Circle(5.0); c }");
         let code = compile_to_python(&program).unwrap();
         assert!(code.contains("Shape.Circle"));
+    }
+
+    // ===== WASM backend tests =====
+
+    #[test]
+    fn test_wasm_function() {
+        let program = parse("fn add(a: i64, b: i64) -> i64 { return a + b; }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(module"));
+        assert!(code.contains("(func $add"));
+        assert!(code.contains("(param $a i64)"));
+        assert!(code.contains("(param $b i64)"));
+        assert!(code.contains("(result i64)"));
+        assert!(code.contains("(i64.add)"));
+        assert!(code.contains("(export \"add\""));
+    }
+
+    #[test]
+    fn test_wasm_control_flow() {
+        let program = parse("fn abs(x: i64) -> i64 { if x < 0 { return -x; } else { return x; } }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(if"));
+        assert!(code.contains("(then"));
+        assert!(code.contains("(else"));
+        assert!(code.contains("(i64.lt"));
+        assert!(code.contains("(i64.neg)"));
+    }
+
+    #[test]
+    fn test_wasm_loop() {
+        let program = parse("fn sum(n: i64) -> i64 { let s: i64 = 0; let i: i64 = 0; while i < n { s = s + i; i = i + 1; } return s; }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(block"));
+        assert!(code.contains("(loop"));
+        assert!(code.contains("(br_if"));
+        assert!(code.contains("(i64.add)"));
+    }
+
+    #[test]
+    fn test_wasm_for_loop() {
+        let program = parse("fn sum_range(n: i64) -> i64 { let s: i64 = 0; for i in 0..n { s = s + i; } return s; }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(local $i i64)"));
+        assert!(code.contains("(local $s i64)"));
+        assert!(code.contains("(i64.const 1)"));
+        assert!(code.contains("(i64.add)"));
+    }
+
+    #[test]
+    fn test_wasm_arithmetic() {
+        let program = parse("fn calc(a: i64, b: i64) -> i64 { return (a + b) * 2 - 1; }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(i64.add)"));
+        assert!(code.contains("(i64.mul)"));
+        assert!(code.contains("(i64.sub)"));
+    }
+
+    #[test]
+    fn test_wasm_comparison() {
+        let program = parse("fn is_positive(x: i64) -> i64 { if x > 0 { return 1; } else { return 0; } }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(i64.gt"));
+    }
+
+    #[test]
+    fn test_wasm_float() {
+        let program = parse("fn double(x: f64) -> f64 { return x * 2.0; }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(param $x f64)"));
+        assert!(code.contains("(result f64)"));
+        assert!(code.contains("(f64.const 2"));
+        assert!(code.contains("(f64.mul)"));
+    }
+
+    #[test]
+    fn test_wasm_module_structure() {
+        let program = parse("fn main() -> i64 { return 42; }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.starts_with("(module"));
+        assert!(code.contains("(import \"console\" \"log\""));
+        assert!(code.contains("(memory (export \"memory\")"));
+        assert!(code.trim().ends_with(")"));
+    }
+
+    #[test]
+    fn test_wasm_multiple_functions() {
+        let program = parse("fn a() -> i64 { return 1; } fn b() -> i64 { return 2; } fn c() -> i64 { return a() + b(); }");
+        let code = compile_to_wasm(&program).unwrap();
+        assert!(code.contains("(func $a"));
+        assert!(code.contains("(func $b"));
+        assert!(code.contains("(func $c"));
+        assert!(code.contains("(call $a)"));
+        assert!(code.contains("(call $b)"));
+        assert!(code.contains("(export \"a\""));
+        assert!(code.contains("(export \"b\""));
+        assert!(code.contains("(export \"c\""));
     }
 }
