@@ -5,3 +5,11 @@ Cargo.lock
 /dist
 # Node.js dependencies for editor extensions
 node_modules/
+# Documentation (moved to linkdoc repository)
+docs/
+site/
+mkdocs.yml
+requirements-docs.txt
+# Release artifacts
+*.zip
+release_notes_*.md
