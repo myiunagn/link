@@ -64,8 +64,8 @@ pub enum Stmt {
         value: Option<Expr>,
     },
     Assign {
-        target: String,
-        value: Expr,
+        target: Box<Expr>,
+        value: Box<Expr>,
     },
     Expr(Expr),
     Return(Option<Expr>),
@@ -82,6 +82,11 @@ pub enum Stmt {
         var_name: String,
         start: Expr,
         end: Expr,
+        body: Block,
+    },
+    ForIterable {
+        var_name: String,
+        iterable: Expr,
         body: Block,
     },
     Loop(Block),
@@ -148,6 +153,7 @@ pub enum Expr {
     None,
     Ident(String),
     List(Vec<Expr>),
+    Tuple(Vec<Expr>),
     Index {
         target: Box<Expr>,
         index: Box<Expr>,
@@ -200,6 +206,20 @@ pub enum Expr {
     /// await 表达式: `await <expr>`
     /// v0.1 树漫游解释器中等价于直接求值(阻塞语义)
     Await(Box<Expr>),
+    /// try! 表达式: `try! <expr>`
+    Try(Box<Expr>),
+    /// 匿名函数/lambda: `fn(x: i64) -> i64 { ... }`
+    Lambda {
+        params: Vec<(String, TypeAnnotation)>,
+        return_type: Option<TypeAnnotation>,
+        body: Block,
+    },
+    /// 借用表达式: `&expr` 或 `&mut expr`
+    Ref(Box<Expr>, bool),
+    /// 解引用表达式: `*expr`
+    Deref(Box<Expr>),
+    /// 类型转换: `expr as Type`
+    AsCast(Box<Expr>, TypeAnnotation),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -222,6 +242,10 @@ pub enum TypeAnnotation {
     Void,
     Ptr(Box<TypeAnnotation>),
     Stream(Box<TypeAnnotation>),
+    Ref(Box<TypeAnnotation>, bool),
+    Generic(Box<TypeAnnotation>, Vec<TypeAnnotation>),
+    Array(Box<TypeAnnotation>, u64),
+    Tuple(Vec<TypeAnnotation>),
 }
 
 impl std::fmt::Display for Expr {
@@ -290,6 +314,34 @@ impl std::fmt::Display for Expr {
                 write!(f, "match {} {{ ... }} ({} arms)", scrutinee, arms.len())
             }
             Expr::Await(inner) => write!(f, "await {}", inner),
+            Expr::Try(inner) => write!(f, "try! {}", inner),
+            Expr::Lambda { params, return_type, .. } => {
+                let params_str: Vec<String> = params.iter()
+                    .map(|(n, t)| format!("{}: {}", n, t))
+                    .collect();
+                if let Some(rt) = return_type {
+                    write!(f, "fn({}) -> {} {{ ... }}", params_str.join(", "), rt)
+                } else {
+                    write!(f, "fn({}) {{ ... }}", params_str.join(", "))
+                }
+            }
+            Expr::Ref(inner, is_mut) => {
+                if *is_mut {
+                    write!(f, "&mut {}", inner)
+                } else {
+                    write!(f, "&{}", inner)
+                }
+            }
+            Expr::Deref(inner) => write!(f, "*{}", inner),
+            Expr::AsCast(expr, ty) => write!(f, "({} as {})", expr, ty),
+            Expr::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, e) in elems.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", e)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -315,6 +367,32 @@ impl std::fmt::Display for TypeAnnotation {
             TypeAnnotation::Void => write!(f, "void"),
             TypeAnnotation::Ptr(inner) => write!(f, "*mut {}", inner),
             TypeAnnotation::Stream(inner) => write!(f, "stream<{}>", inner),
+            TypeAnnotation::Ref(inner, is_mut) => {
+                if *is_mut {
+                    write!(f, "&mut {}", inner)
+                } else {
+                    write!(f, "&{}", inner)
+                }
+            }
+            TypeAnnotation::Generic(base, args) => {
+                write!(f, "{}<", base)?;
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", a)?;
+                }
+                write!(f, ">")
+            }
+            TypeAnnotation::Array(elem, size) => {
+                write!(f, "[{}; {}]", elem, size)
+            }
+            TypeAnnotation::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, e) in elems.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", e)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -322,11 +400,12 @@ impl std::fmt::Display for TypeAnnotation {
 pub struct Parser {
     tokens: Vec<SpannedToken>,
     pos: usize,
+    suppress_call_suffix_block: bool,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<SpannedToken>) -> Self {
-        Self { tokens, pos: 0 }
+        Self { tokens, pos: 0, suppress_call_suffix_block: false }
     }
 
     fn peek(&self) -> Option<&SpannedToken> { self.tokens.get(self.pos) }
@@ -346,6 +425,42 @@ impl Parser {
         if self.pos < self.tokens.len() - 1 { self.pos += 1; }
     }
 
+    fn skip_angle_bracket_placeholder(&mut self) {
+        if !self.eat(Token::Lt) { return; }
+        let mut d = 1;
+        while d > 0 && !self.check(Token::Eof) {
+            if self.check(Token::Lt) { d += 1; }
+            if self.check(Token::Gt) { d -= 1; }
+            self.advance();
+        }
+    }
+
+    fn skip_bracket_placeholder(&mut self) {
+        if !self.eat(Token::LeftBracket) { return; }
+        let mut d = 1;
+        while d > 0 && !self.check(Token::Eof) {
+            if self.check(Token::LeftBracket) { d += 1; }
+            if self.check(Token::RightBracket) { d -= 1; }
+            self.advance();
+        }
+    }
+
+    fn skip_ellipsis_if_present(&mut self) -> bool {
+        if self.check(Token::Dot) {
+            let saved = self.pos;
+            self.advance();
+            if self.check(Token::Dot) {
+                self.advance();
+                if self.check(Token::Dot) {
+                    self.advance();
+                    return true;
+                }
+            }
+            self.pos = saved;
+        }
+        false
+    }
+
     pub fn parse_program(&mut self) -> Result<Program, String> {
         let mut stmts = Vec::new();
         while !self.check(Token::Eof) {
@@ -356,7 +471,263 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, String> {
+        // ... 三重点占位符: 伪代码 D 类, 跳过到分号/结束
+        if self.check(Token::Dot) {
+            let saved = self.pos;
+            self.advance();
+            if self.check(Token::Dot) {
+                self.advance();
+                if self.check(Token::Dot) {
+                    self.advance();
+                    // 吃掉可选分号, 然后返回空表达式占位
+                    self.eat(Token::Semicolon);
+                    return Ok(Stmt::Expr(Expr::None));
+                }
+            }
+            self.pos = saved;
+        }
+        // pub 修饰符前缀: 跳过 pub, 递归解析后续语句
+        if let Token::Ident(ref s) = self.current_token().clone() {
+            if s == "pub" {
+                self.advance();
+                return self.parse_stmt();
+            }
+            // const 声明: const NAME: Type = value;
+            if s == "const" {
+                self.advance();
+                let _name = if let Token::Ident(s2) = self.current_token().clone() { self.advance(); s2 } else { "".to_string() };
+                if self.eat(Token::Colon) { let _ = self.parse_type_annotation(); }
+                if self.eat(Token::Assign) { let _ = self.parse_expr(); }
+                self.eat(Token::Semicolon);
+                return Ok(Stmt::Expr(Expr::None));
+            }
+            // impl 声明块: impl Trait for Type { ... } 或 impl Type { ... }
+            if s == "impl" {
+                self.advance();
+                // 吞到匹配的 {, 然后吞整个块
+                let mut brace_found = false;
+                while !self.check(Token::Eof) {
+                    if self.check(Token::LeftBrace) {
+                        brace_found = true;
+                        break;
+                    }
+                    self.advance();
+                }
+                if brace_found {
+                    self.advance(); // {
+                    let mut depth = 1;
+                    while depth > 0 && !self.check(Token::Eof) {
+                        match self.current_token() {
+                            Token::LeftBrace => { depth += 1; self.advance(); }
+                            Token::RightBrace => { depth -= 1; if depth > 0 { self.advance(); } }
+                            _ => { self.advance(); }
+                        }
+                    }
+                    self.eat(Token::RightBrace);
+                }
+                self.eat(Token::Semicolon);
+                return Ok(Stmt::Expr(Expr::None));
+            }
+            // type alias: type Name = Type :> Constraint :> ...;
+            if s == "type" {
+                self.advance();
+                let _name = if let Token::Ident(s2) = self.current_token().clone() { self.advance(); s2 } else { "".to_string() };
+                if self.check(Token::Lt) {
+                    let mut depth = 1;
+                    self.advance();
+                    while depth > 0 && !self.check(Token::Eof) {
+                        match self.current_token() {
+                            Token::Lt => { depth += 1; self.advance(); }
+                            Token::Gt => { depth -= 1; if depth > 0 { self.advance(); } }
+                            _ => { self.advance(); }
+                        }
+                    }
+                    self.eat(Token::Gt);
+                }
+                if self.eat(Token::Assign) {
+                    while !self.check(Token::Semicolon) && !self.check(Token::Eof) {
+                        self.advance();
+                    }
+                }
+                self.eat(Token::Semicolon);
+                return Ok(Stmt::Expr(Expr::None));
+            }
+            // module / mod 声明: module foo::bar::baz;
+            if s == "module" || s == "mod" {
+                self.advance();
+                let mut parts = Vec::new();
+                match self.current_token().clone() {
+                    Token::Ident(s2) => { parts.push(s2); self.advance(); }
+                    other => return Err(format!("Expected module name after '{}', found {}", s, other)),
+                }
+                while self.check(Token::DoubleColon) {
+                    self.advance();
+                    match self.current_token().clone() {
+                        Token::Ident(s2) => { parts.push(s2); self.advance(); }
+                        other => return Err(format!("Expected identifier after '::' in module path, found {}", other)),
+                    }
+                }
+                self.eat(Token::Semicolon);
+                return Ok(Stmt::ModDecl { name: parts.join("::") });
+            }
+            // use 声明: 当 Token::Use 不存在时 Ident("use") 兜底
+            if s == "use" {
+                self.advance();
+                let mut path = Vec::new();
+                match self.current_token().clone() {
+                    Token::Ident(s2) => { path.push(s2); self.advance(); }
+                    other => return Err(format!("Expected identifier after 'use', found {}", other)),
+                }
+                while self.check(Token::DoubleColon) {
+                    self.advance();
+                    match self.current_token().clone() {
+                        Token::Ident(s2) => { path.push(s2); self.advance(); }
+                        Token::LeftBrace => {
+                            self.advance();
+                            while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                                if let Token::Ident(s3) = self.current_token().clone() {
+                                    self.advance();
+                                    if self.check(Token::As) { self.advance(); if let Token::Ident(_) = self.current_token().clone() { self.advance(); } }
+                                }
+                                if !self.eat(Token::Comma) { break; }
+                            }
+                            self.expect(Token::RightBrace)?;
+                            break;
+                        }
+                        other => return Err(format!("Expected identifier after '::' in use path, found {}", other)),
+                    }
+                }
+                let alias = if self.check(Token::As) {
+                    self.advance();
+                    match self.current_token().clone() {
+                        Token::Ident(s2) => { self.advance(); Some(s2) }
+                        other => return Err(format!("Expected identifier after 'as', found {}", other)),
+                    }
+                } else { None };
+                self.eat(Token::Semicolon);
+                return Ok(Stmt::UseDecl { path, alias });
+            }
+            // room / device / domain 扩展: room BattleArena { ... } / device X { ... }
+            // 作为伪代码类型块: 先 save pos, 确认后续符合声明模式再吞, 否则回退 (避免误吞变量名调用)
+            if s == "room" || s == "device" || s == "component" || s == "entity" || s == "state" ||
+               s == "thing" || s == "adapter" || s == "matchmaker" || s == "server" || s == "client" ||
+               s == "player" || s == "domain" {
+                let saved_kw_pos = self.pos;
+                self.advance();
+                let mut looks_like_decl = false;
+                // 可选泛型参数 <T, U: Bound> - 简化吞到匹配 >
+                if self.eat(Token::Lt) {
+                    looks_like_decl = true;
+                    let mut depth = 1;
+                    while depth > 0 && !self.check(Token::Eof) {
+                        if self.check(Token::Lt) { depth += 1; }
+                        if self.check(Token::Gt) { depth -= 1; }
+                        self.advance();
+                    }
+                }
+                // 吃名称
+                if let Token::Ident(_) = self.current_token().clone() {
+                    looks_like_decl = true;
+                    self.advance();
+                }
+                // 可选 :> Supertype (如 player :> Endpoint)
+                if self.check(Token::Colon) {
+                    let saved_pos = self.pos;
+                    self.advance(); // :
+                    if self.check(Token::Gt) {
+                        looks_like_decl = true;
+                        self.advance(); // >
+                        // 吃 Supertype 标识符或路径 (A::B::C)
+                        loop {
+                            if let Token::Ident(_) = self.current_token().clone() { self.advance(); } else { break; }
+                            if self.check(Token::DoubleColon) { self.advance(); } else { break; }
+                        }
+                    } else {
+                        self.pos = saved_pos;
+                    }
+                }
+                // 吃可选描述字符串
+                if let Token::Str(_) = self.current_token().clone() {
+                    looks_like_decl = true;
+                    self.advance();
+                }
+                // 如果接下来是 {, 吞到匹配的 }
+                if self.check(Token::LeftBrace) {
+                    looks_like_decl = true;
+                    self.advance();
+                    let mut depth = 1;
+                    while depth > 0 && !self.check(Token::Eof) {
+                        match self.current_token() {
+                            Token::LeftBrace => { depth += 1; self.advance(); }
+                            Token::RightBrace => { depth -= 1; if depth > 0 { self.advance(); } }
+                            _ => { self.advance(); }
+                        }
+                    }
+                    self.eat(Token::RightBrace);
+                }
+                // 关键: 只有确实像是声明块 (泛型/名称/子类型/描述/{/分号) 才 return None 占位
+                // 否则回退 saved_kw_pos, 让后续走正常 Token::Ident 表达式分支
+                if looks_like_decl || self.check(Token::Semicolon) || self.check(Token::Eof) {
+                    self.eat(Token::Semicolon);
+                    return Ok(Stmt::Expr(Expr::None));
+                } else {
+                    self.pos = saved_kw_pos;
+                }
+            }
+            // inline / consteval 修饰符前缀后跟 fn
+            if (s == "inline" || s == "consteval") {
+                let lookahead = self.tokens.get(self.pos + 1).map(|t| t.token.clone());
+                if matches!(lookahead, Some(Token::Fn) | Some(Token::Async)) {
+                    self.advance();
+                    return self.parse_fn_decl();
+                }
+            }
+            // import 关键字别名到 use
+            if s == "import" {
+                self.advance();
+                let mut path = Vec::new();
+                match self.current_token().clone() {
+                    Token::Ident(s2) => { path.push(s2); self.advance(); }
+                    other => return Err(format!("Expected identifier after 'import', found {}", other)),
+                }
+                while self.check(Token::DoubleColon) {
+                    self.advance();
+                    match self.current_token().clone() {
+                        Token::Ident(s2) => { path.push(s2); self.advance(); }
+                        Token::LeftBrace => {
+                            // 分组导入
+                            self.advance();
+                            while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                                if let Token::Ident(s3) = self.current_token().clone() {
+                                    self.advance();
+                                    if self.check(Token::As) { self.advance(); if let Token::Ident(_) = self.current_token().clone() { self.advance(); } }
+                                }
+                                if !self.eat(Token::Comma) { break; }
+                            }
+                            self.expect(Token::RightBrace)?;
+                            break;
+                        }
+                        other => return Err(format!("Expected identifier after '::' in import path, found {}", other)),
+                    }
+                }
+                let alias = if self.check(Token::As) {
+                    self.advance();
+                    match self.current_token().clone() {
+                        Token::Ident(s2) => { self.advance(); Some(s2) }
+                        other => return Err(format!("Expected identifier after 'as', found {}", other)),
+                    }
+                } else {
+                    None
+                };
+                self.expect(Token::Semicolon)?;
+                return Ok(Stmt::UseDecl { path, alias });
+            }
+        }
         match self.current_token().clone() {
+            Token::Pub => {
+                self.advance();
+                self.parse_stmt()
+            }
             Token::Async => self.parse_fn_decl(),
             Token::Fn => self.parse_fn_decl(),
             Token::Let => self.parse_let_decl(),
@@ -380,14 +751,120 @@ impl Parser {
                 let block = self.parse_block()?;
                 Ok(Stmt::Expr(Expr::BlockExpr(block)))
             }
-            Token::Ident(name) => {
-                if self.tokens.get(self.pos + 1).map_or(false, |t| t.token == Token::Assign) {
+            token @ (Token::Ident(_) | Token::Stream | Token::Pipeline | Token::Source | Token::Sample) => {
+                let name = match token {
+                    Token::Ident(s) => s,
+                    Token::Stream => "stream".to_string(),
+                    Token::Pipeline => "pipeline".to_string(),
+                    Token::Source => "source".to_string(),
+                    Token::Sample => "sample".to_string(),
+                    _ => unreachable!(),
+                };
+                // 检测类型块声明或子类型声明:
+                // name<T> { ... } / name :> Base { ... } / name { ... }
+                // (D 类伪代码: stream<T>/player/room/interface/component/state/entity/device/thing/adapter/matchmaker 等)
+                let saved_pos = self.pos;
+                self.advance();
+                // 声明关键字 (interface/room/device/...) 后面允许跟可选名称 Ident
+                let decl_keywords = ["interface", "component", "state", "entity", "device", "thing", "adapter", "matchmaker", "server", "client", "domain", "player", "room", "memory", "function", "matchmaker", "service", "adapter", "protocol"];
+                let name_lower = name.to_lowercase();
+                let is_decl_keyword = decl_keywords.iter().any(|k| k == &&name_lower[..]);
+                let mut extra_name_taken = false;
+                if is_decl_keyword {
+                    // 尝试吃可选的名称 Ident
+                    if let Token::Ident(_) = self.current_token().clone() {
+                        self.advance();
+                        extra_name_taken = true;
+                    }
+                }
+                // 如果自身是 stream，没在上面的 decl_keywords，手动强制 is_decl_keyword = true 来吃泛型后 block
+                let forced_block = name_lower == "stream" || name_lower == "pipeline" || name_lower == "source" || name_lower == "sample";
+                // 可选泛型 <...>
+                if self.eat(Token::Lt) {
+                    let mut depth = 1;
+                    while depth > 0 && !self.check(Token::Eof) {
+                        if self.check(Token::Lt) { depth += 1; }
+                        if self.check(Token::Gt) { depth -= 1; }
+                        self.advance();
+                    }
+                }
+                // 可选子类型后缀 :> Base
+                if self.check(Token::Colon) {
+                    let save2 = self.pos;
                     self.advance();
-                    self.advance();
-                    let value = self.parse_expr()?;
-                    Ok(Stmt::Assign { target: name, value })
-                } else {
-                    Ok(Stmt::Expr(self.parse_expr()?))
+                    if self.check(Token::Gt) {
+                        // :> 语法, 吞掉 Base 标识符 (可能有多个用冒号间隔?)
+                        self.advance();
+                        // 吃 Base 名
+                        if let Token::Ident(_) = self.current_token().clone() {
+                            self.advance();
+                        }
+                    } else {
+                        self.pos = save2;
+                    }
+                }
+                // 如果接下来是 {, 判断是 struct init fields 还是伪代码类型声明块
+                if self.check(Token::LeftBrace) {
+                    // 检查: { 里的第一个非空 token 模式: struct init fields?
+                    let next1 = self.tokens.get(self.pos + 1).map(|t| &t.token);
+                    let next2 = self.tokens.get(self.pos + 2).map(|t| &t.token);
+                    let looks_like_struct_init = matches!(next1, Some(Token::RightBrace)) ||
+                        (matches!(next1, Some(Token::Ident(_))) && matches!(next2, Some(Token::Colon))) ||
+                        (matches!(next1, Some(Token::Ident(_))) && matches!(next2, Some(Token::Comma)));
+                    if !looks_like_struct_init || is_decl_keyword || forced_block {
+                        // 吞到匹配的 }
+                        self.advance(); // {
+                        let mut depth = 1;
+                        while depth > 0 && !self.check(Token::Eof) {
+                            match self.current_token() {
+                                Token::LeftBrace => { depth += 1; self.advance(); }
+                                Token::RightBrace => { depth -= 1; if depth > 0 { self.advance(); } }
+                                _ => { self.advance(); }
+                            }
+                        }
+                        self.eat(Token::RightBrace);
+                        self.eat(Token::Semicolon);
+                        return Ok(Stmt::Expr(Expr::None));
+                    }
+                }
+                // 否则回退到普通表达式解析
+                self.pos = saved_pos;
+
+                let saved_pos2 = self.pos;
+                let lhs_result = self.parse_expr();
+                match lhs_result {
+                    Ok(lhs_expr) => {
+                        if self.check(Token::Assign) {
+                            self.advance();
+                            let value = self.parse_expr()?;
+                            Ok(Stmt::Assign { target: Box::new(lhs_expr), value: Box::new(value) })
+                        } else {
+                            Ok(Stmt::Expr(lhs_expr))
+                        }
+                    }
+                    Err(_) => {
+                        self.pos = saved_pos2;
+                        Ok(Stmt::Expr(self.parse_expr()?))
+                    }
+                }
+            }
+            Token::LeftParen | Token::LeftBracket | Token::Star => {
+                let saved_pos = self.pos;
+                let lhs_result = self.parse_expr();
+                match lhs_result {
+                    Ok(lhs_expr) => {
+                        if self.check(Token::Assign) {
+                            self.advance();
+                            let value = self.parse_expr()?;
+                            Ok(Stmt::Assign { target: Box::new(lhs_expr), value: Box::new(value) })
+                        } else {
+                            Ok(Stmt::Expr(lhs_expr))
+                        }
+                    }
+                    Err(_) => {
+                        self.pos = saved_pos;
+                        Ok(Stmt::Expr(self.parse_expr()?))
+                    }
                 }
             }
             _ => Ok(Stmt::Expr(self.parse_expr()?)),
@@ -396,11 +873,26 @@ impl Parser {
 
     fn parse_extern_decl(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Extern)?;
-        let language = self.parse_string_literal()?;
+        let language = if self.check(Token::Lt) {
+            // D类占位符: extern "<language>" - 跳过 <...> 并使用占位语言名
+            self.skip_angle_bracket_placeholder();
+            "__placeholder_lang__".to_string()
+        } else {
+            self.parse_string_literal()?
+        };
+        // D类占位符: [module "..."] - 跳过方括号可选语法
+        if self.check(Token::LeftBracket) {
+            self.skip_bracket_placeholder();
+        }
         let module = if let Token::Ident(ref s) = self.current_token().clone() {
-            if s == "module" {
+            if s == "module" || s == "crate" {
                 self.advance();
-                Some(self.parse_string_literal()?)
+                Some(if self.check(Token::Lt) {
+                    self.skip_angle_bracket_placeholder();
+                    "__placeholder_module__".to_string()
+                } else {
+                    self.parse_string_literal()?
+                })
             } else {
                 None
             }
@@ -413,9 +905,12 @@ impl Parser {
 
     fn parse_export_decl(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Export)?;
+        if self.check(Token::Fn) || self.check(Token::Async) {
+            return self.parse_fn_decl();
+        }
         let language = self.parse_string_literal()?;
         let module = if let Token::Ident(ref s) = self.current_token().clone() {
-            if s == "module" {
+            if s == "module" || s == "crate" {
                 self.advance();
                 Some(self.parse_string_literal()?)
             } else {
@@ -439,6 +934,82 @@ impl Parser {
         self.expect(Token::LeftBrace)?;
         let mut decls = Vec::new();
         while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+            // D类占位符: ... (三重点省略号) 跳到分号/右花括号后 continue
+            if self.skip_ellipsis_if_present() {
+                while !self.check(Token::Semicolon) && !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                    if self.check(Token::LeftBrace) {
+                        let mut d = 1;
+                        self.advance();
+                        while d > 0 && !self.check(Token::Eof) {
+                            match self.current_token() {
+                                Token::LeftBrace => { d += 1; self.advance(); }
+                                Token::RightBrace => { d -= 1; if d > 0 { self.advance(); } }
+                                _ => { self.advance(); }
+                            }
+                        }
+                    } else {
+                        self.advance();
+                    }
+                }
+                self.eat(Token::Semicolon);
+                continue;
+            }
+            if let Token::Ident(ref s) = self.current_token().clone() {
+                // 跳过 memory / class / interface / property / function 非函数声明
+                if s == "memory" || s == "class" || s == "interface" || s == "property" || s == "function" {
+                    // class/interface: 吞到匹配的 } 为止 (可能带嵌套 {})
+                    if s == "class" || s == "interface" {
+                        self.advance();
+                        // 吞类名
+                        if let Token::Ident(_) = self.current_token().clone() { self.advance(); }
+                        // 可选泛型
+                        if self.eat(Token::Lt) {
+                            let mut d = 1;
+                            while d > 0 && !self.check(Token::Eof) {
+                                if self.check(Token::Lt) { d += 1; }
+                                if self.check(Token::Gt) { d -= 1; }
+                                self.advance();
+                            }
+                        }
+                        // 如果接下来是 {, 吞到匹配 }
+                        if self.check(Token::LeftBrace) {
+                            self.advance();
+                            let mut d = 1;
+                            while d > 0 && !self.check(Token::Eof) {
+                                match self.current_token() {
+                                    Token::LeftBrace => { d += 1; self.advance(); }
+                                    Token::RightBrace => { d -= 1; if d > 0 { self.advance(); } }
+                                    _ => { self.advance(); }
+                                }
+                            }
+                            self.eat(Token::RightBrace);
+                        }
+                        self.eat(Token::Semicolon);
+                        continue;
+                    } else {
+                        // property/function/memory: 跳到分号或右花括号
+                        while !self.check(Token::Semicolon) && !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                            // 如果遇到 {, 吞到匹配的 }
+                            if self.check(Token::LeftBrace) {
+                                self.advance();
+                                let mut d = 1;
+                                while d > 0 && !self.check(Token::Eof) {
+                                    match self.current_token() {
+                                        Token::LeftBrace => { d += 1; self.advance(); }
+                                        Token::RightBrace => { d -= 1; if d > 0 { self.advance(); } }
+                                        _ => { self.advance(); }
+                                    }
+                                }
+                                self.eat(Token::RightBrace);
+                            } else {
+                                self.advance();
+                            }
+                        }
+                        self.eat(Token::Semicolon);
+                        continue;
+                    }
+                }
+            }
             let is_async = if self.check(Token::Async) {
                 self.advance();
                 true
@@ -448,19 +1019,56 @@ impl Parser {
             self.expect(Token::Fn)?;
             let name = match self.current_token().clone() {
                 Token::Ident(s) => { self.advance(); s }
+                Token::Lt => {
+                    self.skip_angle_bracket_placeholder();
+                    "__placeholder_fn_name__".to_string()
+                }
                 other => return Err(format!("Expected function name, found {}", other)),
             };
+            // 可选泛型 <...>
+            if self.eat(Token::Lt) {
+                let mut d = 1;
+                while d > 0 && !self.check(Token::Eof) {
+                    if self.check(Token::Lt) { d += 1; }
+                    if self.check(Token::Gt) { d -= 1; }
+                    self.advance();
+                }
+            }
             self.expect(Token::LeftParen)?;
             let mut params = Vec::new();
             if !self.check(Token::RightParen) {
                 loop {
-                    let param_name = match self.current_token().clone() {
-                        Token::Ident(s) => { self.advance(); s }
+                    // D类占位符: ... 省略参数
+                    if self.skip_ellipsis_if_present() {
+                        // 吃掉逗号分隔的剩余内容直到 )
+                        while !self.check(Token::RightParen) && !self.check(Token::Eof) {
+                            self.advance();
+                        }
+                        break;
+                    }
+                    match self.current_token().clone() {
+                        Token::Ident(s) => {
+                            self.advance();
+                            self.expect(Token::Colon)?;
+                            let param_type = self.parse_type_annotation()?;
+                            params.push((s, param_type));
+                        }
+                        Token::Lt => {
+                            self.skip_angle_bracket_placeholder();
+                            if self.eat(Token::Colon) {
+                                let param_type = self.parse_type_annotation()?;
+                                params.push(("__placeholder_param__".to_string(), param_type));
+                            } else if self.check(Token::Comma) || self.check(Token::RightParen) {
+                                params.push(("__placeholder_param__".to_string(), TypeAnnotation::Void));
+                            } else {
+                                while !self.check(Token::Comma) && !self.check(Token::RightParen) && !self.check(Token::Eof) {
+                                    self.advance();
+                                }
+                                params.push(("__placeholder_param__".to_string(), TypeAnnotation::Void));
+                            }
+                        }
                         other => return Err(format!("Expected parameter name, found {}", other)),
-                    };
-                    self.expect(Token::Colon)?;
-                    let param_type = self.parse_type_annotation()?;
-                    params.push((param_name, param_type));
+                    }
                     if !self.eat(Token::Comma) { break; }
                 }
             }
@@ -477,13 +1085,25 @@ impl Parser {
         Ok(decls)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, String> { self.parse_pipe() }
+    fn parse_expr(&mut self) -> Result<Expr, String> { self.parse_pipe(false) }
 
-    fn parse_pipe(&mut self) -> Result<Expr, String> {
-        let left = self.parse_or()?;
+    fn parse_pipe(&mut self, in_pipeline: bool) -> Result<Expr, String> {
+        let mut left = self.parse_or()?;
+        if in_pipeline {
+            if let Expr::Call { callee: _, ref mut args } = left {
+                if self.check(Token::LeftBrace) {
+                    let next = self.tokens.get(self.pos + 1).map(|t| &t.token);
+                    let is_struct_init = matches!(next, Some(Token::RightBrace)) || (matches!(next, Some(Token::Ident(_))) && matches!(self.tokens.get(self.pos + 2).map(|t| &t.token), Some(Token::Colon)));
+                    if !is_struct_init {
+                        let block = self.parse_block()?;
+                        args.push(Expr::Lambda { params: vec![], return_type: None, body: block });
+                    }
+                }
+            }
+        }
         if self.check(Token::Pipe) {
             self.advance();
-            let right = self.parse_pipe()?;
+            let right = self.parse_pipe(true)?;
             Ok(Expr::Binary { op: BinOp::Pipe, left: Box::new(left), right: Box::new(right) })
         } else {
             Ok(left)
@@ -549,20 +1169,41 @@ impl Parser {
     }
 
     fn parse_multiplication(&mut self) -> Result<Expr, String> {
-        let mut left = self.parse_unary()?;
+        let mut left = self.parse_cast()?;
         loop {
             if self.eat(Token::Star) {
-                left = Expr::Binary { op: BinOp::Mul, left: Box::new(left), right: Box::new(self.parse_unary()?) };
+                left = Expr::Binary { op: BinOp::Mul, left: Box::new(left), right: Box::new(self.parse_cast()?) };
             } else if self.eat(Token::Slash) {
-                left = Expr::Binary { op: BinOp::Div, left: Box::new(left), right: Box::new(self.parse_unary()?) };
+                left = Expr::Binary { op: BinOp::Div, left: Box::new(left), right: Box::new(self.parse_cast()?) };
             } else if self.eat(Token::Percent) {
-                left = Expr::Binary { op: BinOp::Mod, left: Box::new(left), right: Box::new(self.parse_unary()?) };
+                left = Expr::Binary { op: BinOp::Mod, left: Box::new(left), right: Box::new(self.parse_cast()?) };
+            } else { break; }
+        }
+        Ok(left)
+    }
+
+    fn parse_cast(&mut self) -> Result<Expr, String> {
+        let mut left = self.parse_unary()?;
+        loop {
+            if self.eat(Token::As) {
+                let ty = self.parse_type_annotation()?;
+                left = Expr::AsCast(Box::new(left), ty);
             } else { break; }
         }
         Ok(left)
     }
 
     fn parse_unary(&mut self) -> Result<Expr, String> {
+        // try! <expr> —— 前缀 try! 运算符
+        if let Token::Ident(ref s) = self.current_token().clone() {
+            let next_token = self.tokens.get(self.pos + 1).map(|t| &t.token);
+            if s == "try" && next_token == Some(&Token::Not) {
+                self.advance(); // "try"
+                self.advance(); // "!" (Token::Not)
+                let inner = self.parse_unary()?;
+                return Ok(Expr::Try(Box::new(inner)));
+            }
+        }
         if self.eat(Token::Minus) {
             let op = self.parse_unary()?;
             return Ok(Expr::Unary { op: UnaryOp::Neg, operand: Box::new(op) });
@@ -576,6 +1217,20 @@ impl Parser {
             let inner = self.parse_unary()?;
             return Ok(Expr::Await(Box::new(inner)));
         }
+        // 借用: &expr 或 &mut expr
+        if self.eat(Token::Ampersand) {
+            let mut is_mut = false;
+            if self.eat(Token::Mut) {
+                is_mut = true;
+            }
+            let inner = self.parse_unary()?;
+            return Ok(Expr::Ref(Box::new(inner), is_mut));
+        }
+        // 解引用: *expr
+        if self.eat(Token::Star) {
+            let inner = self.parse_unary()?;
+            return Ok(Expr::Deref(Box::new(inner)));
+        }
         self.parse_call()
     }
 
@@ -583,8 +1238,13 @@ impl Parser {
         let mut expr = self.parse_primary()?;
         loop {
             if self.check(Token::LeftParen) {
-                if let Expr::Ident(name) = &expr {
-                    let name = name.clone();
+                let callee = match &expr {
+                    Expr::Ident(name) => Some(name.clone()),
+                    Expr::FieldAccess { target: _, field } => Some(field.clone()),
+                    Expr::Path { base, segment } => Some(format!("{}::{}", base, segment)),
+                    _ => None,
+                };
+                if let Some(name) = callee {
                     self.advance();
                     let mut args = Vec::new();
                     if !self.check(Token::RightParen) {
@@ -616,6 +1276,74 @@ impl Parser {
                     other => return Err(format!("Expected field name after '.', found {}", other)),
                 };
                 expr = Expr::FieldAccess { target: Box::new(expr), field };
+            } else if self.check(Token::DoubleColon) {
+                self.advance();
+                match self.current_token().clone() {
+                    Token::Ident(right) => {
+                        self.advance();
+                        match expr {
+                            Expr::Ident(left_str) => {
+                                expr = Expr::Path { base: left_str, segment: right };
+                            }
+                            Expr::Path { base, segment } => {
+                                expr = Expr::Ident(format!("{}::{}::{}", base, segment, right));
+                            }
+                            _ => break,
+                        }
+                    }
+                    other => return Err(format!("Expected identifier after '::', found {}", other)),
+                }
+            } else if self.check(Token::LeftBrace) {
+                let mut handled_call = false;
+                if !self.suppress_call_suffix_block {
+                    if let Expr::Call { callee: _, ref mut args } = expr {
+                        let next = self.tokens.get(self.pos + 1).map(|t| &t.token);
+                        let is_struct_init = matches!(next, Some(Token::RightBrace)) || (matches!(next, Some(Token::Ident(_))) && matches!(self.tokens.get(self.pos + 2).map(|t| &t.token), Some(Token::Colon)));
+                        if !is_struct_init {
+                            let block = self.parse_block()?;
+                            args.push(Expr::Lambda { params: vec![], return_type: None, body: block });
+                            handled_call = true;
+                        }
+                    }
+                }
+                if !handled_call {
+                    if let Expr::Ident(name) = &expr {
+                        let next = self.tokens.get(self.pos + 1).map(|t| &t.token);
+                        let is_rightbrace = matches!(next, Some(Token::RightBrace));
+                        let t2 = self.tokens.get(self.pos + 2).map(|t| &t.token);
+                        let ident_then_colon = matches!(next, Some(Token::Ident(_))) && matches!(t2, Some(Token::Colon));
+                        let ident_then_comma = matches!(next, Some(Token::Ident(_))) && matches!(t2, Some(Token::Comma));
+                        if is_rightbrace || ident_then_colon || ident_then_comma {
+                            let name = name.clone();
+                            self.advance();
+                            let mut fields = Vec::new();
+                            while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                                let fname = match self.current_token().clone() {
+                                    Token::Ident(s) => { self.advance(); s }
+                                    Token::Return | Token::Let | Token::If | Token::While | Token::For | Token::Loop |
+                                    Token::Break | Token::Continue | Token::Match => {
+                                        break;
+                                    }
+                                    other => return Err(format!("Expected field name in struct init, found {}", other)),
+                                };
+                                if self.check(Token::Colon) {
+                                    self.advance();
+                                    let value = self.parse_expr()?;
+                                    fields.push((fname, value));
+                                } else {
+                                    fields.push((fname.clone(), Expr::Ident(fname)));
+                                }
+                                if !self.eat(Token::Comma) { break; }
+                            }
+                            self.expect(Token::RightBrace)?;
+                            expr = Expr::StructInit { name, fields };
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
             } else {
                 break;
             }
@@ -626,11 +1354,32 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expr, String> {
         let token = self.current_token().clone();
         match token {
-            Token::Int(n) => { self.advance(); Ok(Expr::Int(n)) }
-            Token::Float(n) => { self.advance(); Ok(Expr::Float(n)) }
+            Token::Int(n) => {
+                self.advance();
+                // 可选时间/单位后缀: 5s, 5min, 5h, 5ms, 5us, 5ns
+                if let Some(&Token::Ident(ref unit)) = self.tokens.get(self.pos).map(|t| &t.token) {
+                    if matches!(unit.as_str(), "s" | "min" | "h" | "ms" | "us" | "ns" | "Hz" | "kHz" | "MHz") {
+                        self.advance();
+                    }
+                }
+                Ok(Expr::Int(n))
+            }
+            Token::Float(n) => {
+                self.advance();
+                // 可选单位后缀
+                if let Some(&Token::Ident(ref unit)) = self.tokens.get(self.pos).map(|t| &t.token) {
+                    if matches!(unit.as_str(), "s" | "min" | "h" | "ms" | "us" | "ns" | "Hz" | "kHz" | "MHz") {
+                        self.advance();
+                    }
+                }
+                Ok(Expr::Float(n))
+            }
             Token::Str(s) => { self.advance(); Ok(Expr::Str(s)) }
             Token::Bool(b) => { self.advance(); Ok(Expr::Bool(b)) }
             Token::None => { self.advance(); Ok(Expr::None) }
+            Token::Ok => { self.advance(); Ok(Expr::Ident("ok".to_string())) }
+            Token::Err => { self.advance(); Ok(Expr::Ident("err".to_string())) }
+            Token::Some => { self.advance(); Ok(Expr::Ident("some".to_string())) }
             // `source` 在 flow 块内是字段关键字,但在表达式中作为变量名使用
             Token::Source => { self.advance(); Ok(Expr::Ident("source".to_string())) }
             Token::Ident(name) => {
@@ -658,15 +1407,15 @@ impl Parser {
                         Ok(Expr::Path { base: name, segment })
                     }
                 } else if self.check(Token::LeftBrace) {
-                    // 仅当符合 `Name { field: ... }` 或 `Name {}` 模式时才识别为 struct init
-                    // 避免与块表达式冲突，例如 `match c { ... }` 中的 `c {`
+                    // 仅当符合 `Name { field: ... }` 或 `Name {}` 或 `Name { f1, f2, ... }` 模式时才识别为 struct init
+                    // 避免与块表达式冲突，例如 `match c { ... }` 中的 `c {` 或 `if cond { ... }`
                     let is_struct_init = {
                         let next = self.tokens.get(self.pos + 1).map(|t| &t.token);
                         match next {
                             Some(Token::RightBrace) => true,
                             Some(Token::Ident(_)) => {
                                 let after = self.tokens.get(self.pos + 2).map(|t| &t.token);
-                                matches!(after, Some(Token::Colon))
+                                matches!(after, Some(Token::Colon)) || matches!(after, Some(Token::Comma))
                             }
                             _ => false,
                         }
@@ -680,10 +1429,15 @@ impl Parser {
                                     Token::Ident(s) => { self.advance(); s }
                                     other => return Err(format!("Expected field name, found {}", other)),
                                 };
-                                self.expect(Token::Colon)?;
-                                let field_val = self.parse_expr()?;
-                                fields.push((field_name, field_val));
+                                if self.check(Token::Colon) {
+                                    self.advance();
+                                    let field_val = self.parse_expr()?;
+                                    fields.push((field_name, field_val));
+                                } else {
+                                    fields.push((field_name.clone(), Expr::Ident(field_name)));
+                                }
                                 if !self.eat(Token::Comma) { break; }
+                                if self.check(Token::RightBrace) || self.check(Token::Eof) { break; }
                             }
                         }
                         self.expect(Token::RightBrace)?;
@@ -697,20 +1451,62 @@ impl Parser {
             }
             Token::Stream => { self.advance(); Ok(Expr::Ident("stream".to_string())) }
             Token::Match => self.parse_match_expr(),
+            Token::Fn => self.parse_lambda(),
+            Token::If => self.parse_if_expr(),
+            Token::Loop => {
+                self.advance();
+                let body = self.parse_block()?;
+                Ok(Expr::BlockExpr(Block { stmts: vec![Stmt::Loop(body)] }))
+            }
+            Token::While => {
+                self.advance();
+                self.suppress_call_suffix_block = true;
+                let condition = self.parse_expr()?;
+                self.suppress_call_suffix_block = false;
+                let body = self.parse_block()?;
+                Ok(Expr::BlockExpr(Block { stmts: vec![Stmt::While { condition, body }] }))
+            }
             Token::LeftParen => {
                 self.advance();
-                let expr = self.parse_expr()?;
-                self.expect(Token::RightParen)?;
-                Ok(expr)
+                if self.check(Token::RightParen) {
+                    self.advance();
+                    Ok(Expr::None)
+                } else {
+                    let first = self.parse_expr()?;
+                    let mut elements = vec![first];
+                    while self.eat(Token::Comma) {
+                        if self.check(Token::RightParen) { break; }
+                        elements.push(self.parse_expr()?);
+                    }
+                    self.expect(Token::RightParen)?;
+                    if elements.len() == 1 {
+                        Ok(elements.into_iter().next().unwrap())
+                    } else {
+                        Ok(Expr::Tuple(elements))
+                    }
+                }
             }
             Token::LeftBracket => {
                 self.advance();
                 let mut items = Vec::new();
                 if !self.check(Token::RightBracket) {
-                    items.push(self.parse_expr()?);
-                    while self.eat(Token::Comma) {
-                        if self.check(Token::RightBracket) { break; }
-                        items.push(self.parse_expr()?);
+                    let first = self.parse_expr()?;
+                    if self.eat(Token::Semicolon) {
+                        // [value; count] 形式: 重复 count 次
+                        let count_expr = self.parse_expr()?;
+                        let count = match count_expr {
+                            Expr::Int(n) => n as usize,
+                            _ => 0,
+                        };
+                        for _ in 0..count {
+                            items.push(first.clone());
+                        }
+                    } else {
+                        items.push(first);
+                        while self.eat(Token::Comma) {
+                            if self.check(Token::RightBracket) { break; }
+                            items.push(self.parse_expr()?);
+                        }
                     }
                 }
                 self.expect(Token::RightBracket)?;
@@ -720,6 +1516,21 @@ impl Parser {
                 let block = self.parse_block()?;
                 Ok(Expr::BlockExpr(block))
             }
+            // 占位符语法: <expr> / <pipeline expr> 等,D类伪代码中用于语法模板
+            // 解析为占位 None 表达式,仅保证 parser/sema 通过(实际不执行)
+            Token::Lt => {
+                self.advance();
+                let mut depth = 1;
+                while depth > 0 && !self.check(Token::Eof) {
+                    match self.current_token() {
+                        Token::Lt => { depth += 1; self.advance(); }
+                        Token::Gt => { depth -= 1; if depth > 0 { self.advance(); } }
+                        _ => { self.advance(); }
+                    }
+                }
+                if self.check(Token::Gt) { self.advance(); }
+                Ok(Expr::None)
+            }
             _ => Err(format!("Unexpected token: {}", token)),
         }
     }
@@ -728,12 +1539,96 @@ impl Parser {
         // 可选 async 前缀
         let is_async = self.eat(Token::Async);
         self.expect(Token::Fn)?;
-        let name = if let Token::Ident(ref s) = self.current_token() {
-            s.clone()
-        } else {
-            return Err(format!("Expected function name, found {}", self.current_token()));
+        let name = match self.current_token().clone() {
+            Token::Ident(ref s) => {
+                let n = s.clone();
+                self.advance();
+                n
+            }
+            Token::Lt => {
+                self.skip_angle_bracket_placeholder();
+                "__placeholder_fn_name__".to_string()
+            }
+            other => return Err(format!("Expected function name, found {}", other)),
         };
-        self.advance();
+        // 可选泛型参数 <T: Ord, U> - 简化吞到匹配 >
+        if self.eat(Token::Lt) {
+            let mut depth = 1;
+            while depth > 0 && !self.check(Token::Eof) {
+                if self.check(Token::Lt) { depth += 1; }
+                if self.check(Token::Gt) { depth -= 1; }
+                self.advance();
+            }
+        }
+        self.expect(Token::LeftParen)?;
+        let mut params = Vec::new();
+        while !self.check(Token::RightParen) {
+            if self.skip_ellipsis_if_present() {
+                while !self.check(Token::RightParen) && !self.check(Token::Eof) {
+                    self.advance();
+                }
+                break;
+            }
+            let param_name = match self.current_token().clone() {
+                Token::Ident(ref s) => {
+                    let n = s.clone();
+                    self.advance();
+                    // 必须有 : 类型
+                    self.expect(Token::Colon)?;
+                    let type_ann = self.parse_type_annotation()?;
+                    params.push((n.clone(), type_ann));
+                    n
+                }
+                Token::Lt => {
+                    self.skip_angle_bracket_placeholder();
+                    // 如果接下来是 : 则解析类型，否则当做整个参数（没有类型注解）
+                    if self.eat(Token::Colon) {
+                        let type_ann = self.parse_type_annotation()?;
+                        params.push(("__placeholder_param__".to_string(), type_ann));
+                    } else if self.check(Token::Comma) || self.check(Token::RightParen) {
+                        // 没有类型，直接作为占位，不 push（或 push 默认类型）
+                        params.push(("__placeholder_param__".to_string(), TypeAnnotation::Void));
+                    } else {
+                        // 可能还未跳过的内容，直接 skip 到 , 或 )
+                        while !self.check(Token::Comma) && !self.check(Token::RightParen) && !self.check(Token::Eof) {
+                            self.advance();
+                        }
+                        params.push(("__placeholder_param__".to_string(), TypeAnnotation::Void));
+                    }
+                    "__placeholder_param__".to_string()
+                }
+                other => return Err(format!("Expected parameter name, found {}", other)),
+            };
+            if !self.eat(Token::Comma) { break; }
+        }
+        self.expect(Token::RightParen)?;
+        let return_type = if self.eat(Token::Arrow) {
+            Some(self.parse_type_annotation()?)
+        } else { None };
+        // 跳过可能的 :> SubtypeConstraint（如 :> Normalized）
+        if self.check(Token::Colon) {
+            let saved_pos = self.pos;
+            self.advance();
+            if self.check(Token::Gt) {
+                self.advance();
+                while !self.check(Token::LeftBrace) && !self.check(Token::Semicolon) && !self.check(Token::Eof) {
+                    self.advance();
+                }
+            } else {
+                self.pos = saved_pos;
+            }
+        }
+        let body = if self.eat(Token::Semicolon) {
+            Block { stmts: Vec::new() }
+        } else {
+            self.parse_block()?
+        };
+        Ok(Stmt::FnDecl { name, params, return_type, body, is_async })
+    }
+
+    /// 解析匿名函数表达式: `fn(x: i64) -> i64 { ... }` 或 `fn(x) { ... }`
+    fn parse_lambda(&mut self) -> Result<Expr, String> {
+        self.expect(Token::Fn)?;
         self.expect(Token::LeftParen)?;
         let mut params = Vec::new();
         while !self.check(Token::RightParen) {
@@ -743,8 +1638,12 @@ impl Parser {
                 return Err(format!("Expected parameter name, found {}", self.current_token()));
             };
             self.advance();
-            self.expect(Token::Colon)?;
-            let type_ann = self.parse_type_annotation()?;
+            // 类型标注可选: `x: i64` 或 `x`
+            let type_ann = if self.eat(Token::Colon) {
+                self.parse_type_annotation()?
+            } else {
+                TypeAnnotation::Named("i64".to_string())
+            };
             params.push((param_name, type_ann));
             if !self.eat(Token::Comma) { break; }
         }
@@ -753,7 +1652,7 @@ impl Parser {
             Some(self.parse_type_annotation()?)
         } else { None };
         let body = self.parse_block()?;
-        Ok(Stmt::FnDecl { name, params, return_type, body, is_async })
+        Ok(Expr::Lambda { params, return_type, body })
     }
 
     fn parse_let_decl(&mut self) -> Result<Stmt, String> {
@@ -785,9 +1684,39 @@ impl Parser {
         Ok(Stmt::Return(value))
     }
 
+    fn block_to_expr(&self, block: Block) -> Expr {
+        if block.stmts.len() == 1 {
+            if let Stmt::Expr(e) = &block.stmts[0] {
+                return e.clone();
+            }
+        }
+        Expr::BlockExpr(block)
+    }
+
+    fn parse_if_expr(&mut self) -> Result<Expr, String> {
+        self.expect(Token::If)?;
+        self.suppress_call_suffix_block = true;
+        let condition = self.parse_expr()?;
+        self.suppress_call_suffix_block = false;
+        let then_block = self.parse_block()?;
+        if !self.eat(Token::Else) {
+            return Err("'if' expression requires an else branch".to_string());
+        }
+        let else_value: Box<Expr> = if self.check(Token::If) {
+            Box::new(self.parse_if_expr()?)
+        } else {
+            let else_block = self.parse_block()?;
+            Box::new(self.block_to_expr(else_block))
+        };
+        let then_value = Box::new(self.block_to_expr(then_block));
+        Ok(Expr::IfExpr { condition: Box::new(condition), then_value, else_value })
+    }
+
     fn parse_if(&mut self) -> Result<Stmt, String> {
         self.expect(Token::If)?;
+        self.suppress_call_suffix_block = true;
         let condition = self.parse_expr()?;
+        self.suppress_call_suffix_block = false;
         let then_branch = self.parse_block()?;
         let else_branch = if self.eat(Token::Else) {
             Some(if self.check(Token::If) {
@@ -802,7 +1731,9 @@ impl Parser {
 
     fn parse_while(&mut self) -> Result<Stmt, String> {
         self.expect(Token::While)?;
+        self.suppress_call_suffix_block = true;
         let condition = self.parse_expr()?;
+        self.suppress_call_suffix_block = false;
         let body = self.parse_block()?;
         Ok(Stmt::While { condition, body })
     }
@@ -816,12 +1747,25 @@ impl Parser {
         };
         self.advance();
         self.expect(Token::In)?;
-        let start = self.parse_expr()?;
-        self.expect(Token::Dot)?;
-        self.expect(Token::Dot)?;
-        let end = self.parse_expr()?;
+        self.suppress_call_suffix_block = true;
+        let first_expr = self.parse_expr()?;
+        self.suppress_call_suffix_block = false;
+        if self.check(Token::Dot) {
+            let saved_pos = self.pos;
+            self.advance();
+            if self.check(Token::Dot) {
+                self.advance();
+                self.suppress_call_suffix_block = true;
+                let end = self.parse_expr()?;
+                self.suppress_call_suffix_block = false;
+                let body = self.parse_block()?;
+                return Ok(Stmt::For { var_name, start: first_expr, end, body });
+            } else {
+                self.pos = saved_pos;
+            }
+        }
         let body = self.parse_block()?;
-        Ok(Stmt::For { var_name, start, end, body })
+        Ok(Stmt::ForIterable { var_name, iterable: first_expr, body })
     }
 
     fn parse_loop(&mut self) -> Result<Stmt, String> {
@@ -841,13 +1785,22 @@ impl Parser {
         Ok(Block { stmts })
     }
 
-    /// 解析结构体声明: `struct Name { field: T, ... }`
+    /// 解析结构体声明: `struct Name { field: T, ... }` or `struct Name<T> { ... }`
     fn parse_struct_decl(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Struct)?;
         let name = match self.current_token().clone() {
             Token::Ident(s) => { self.advance(); s }
             other => return Err(format!("Expected struct name, found {}", other)),
         };
+        // 可选泛型参数: <T, U, const N: usize> - 简化处理，吞到匹配 >
+        if self.eat(Token::Lt) {
+            let mut depth = 1;
+            while depth > 0 && !self.check(Token::Eof) {
+                if self.check(Token::Lt) { depth += 1; }
+                if self.check(Token::Gt) { depth -= 1; }
+                self.advance();
+            }
+        }
         self.expect(Token::LeftBrace)?;
         let mut fields = Vec::new();
         while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
@@ -858,19 +1811,31 @@ impl Parser {
             self.expect(Token::Colon)?;
             let type_ann = self.parse_type_annotation()?;
             fields.push(StructField { name: field_name, type_ann });
-            if !self.eat(Token::Comma) { break; }
+            let has_comma = self.eat(Token::Comma);
+            let has_semicolon = self.eat(Token::Semicolon);
+            if !has_comma && !has_semicolon { break; }
+            if self.check(Token::RightBrace) || self.check(Token::Eof) { break; }
         }
         self.expect(Token::RightBrace)?;
         Ok(Stmt::StructDecl { name, fields })
     }
 
-    /// 解析枚举声明: `enum Name { Variant, Variant2(T, T), ... }`
+    /// 解析枚举声明: `enum Name { Variant, Variant2(T, T), ... }` or `enum Name<T> { ... }`
     fn parse_enum_decl(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Enum)?;
         let name = match self.current_token().clone() {
             Token::Ident(s) => { self.advance(); s }
             other => return Err(format!("Expected enum name, found {}", other)),
         };
+        // 可选泛型参数: <T> - 简化处理，吞到匹配 >
+        if self.eat(Token::Lt) {
+            let mut depth = 1;
+            while depth > 0 && !self.check(Token::Eof) {
+                if self.check(Token::Lt) { depth += 1; }
+                if self.check(Token::Gt) { depth -= 1; }
+                self.advance();
+            }
+        }
         self.expect(Token::LeftBrace)?;
         let mut variants = Vec::new();
         while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
@@ -878,13 +1843,33 @@ impl Parser {
                 Token::Ident(s) => { self.advance(); s }
                 other => return Err(format!("Expected variant name, found {}", other)),
             };
-            // 可选的载荷类型列表: (T, T, ...)
+            // 可选的载荷类型列表: (T, T, ...) or (name: T, ...)
             let payload = if self.check(Token::LeftParen) {
                 self.advance();
                 let mut types = Vec::new();
                 if !self.check(Token::RightParen) {
+                    // 支持命名: name: T 或匿名: T - save+restore 方式
+                    let saved = self.pos;
+                    let mut named_style = false;
+                    if let Token::Ident(_) = self.current_token().clone() {
+                        self.advance(); // name
+                        if self.eat(Token::Colon) {
+                            named_style = true;
+                        }
+                    }
+                    if !named_style {
+                        self.pos = saved;
+                    }
                     types.push(self.parse_type_annotation()?);
                     while self.eat(Token::Comma) {
+                        if self.check(Token::RightParen) { break; }
+                        let saved2 = self.pos;
+                        let mut named2 = false;
+                        if let Token::Ident(_) = self.current_token().clone() {
+                            self.advance();
+                            if self.eat(Token::Colon) { named2 = true; }
+                        }
+                        if !named2 { self.pos = saved2; }
                         types.push(self.parse_type_annotation()?);
                     }
                 }
@@ -895,6 +1880,7 @@ impl Parser {
             };
             variants.push(EnumVariantDecl { name: variant_name, payload });
             if !self.eat(Token::Comma) { break; }
+            if self.check(Token::RightBrace) || self.check(Token::Eof) { break; }
         }
         self.expect(Token::RightBrace)?;
         Ok(Stmt::EnumDecl { name, variants })
@@ -921,7 +1907,7 @@ impl Parser {
     ///         <expr>;
     /// }
     /// ```
-    /// `description` 与 `source` / `sample` 字段都是可选的;`pipeline:` 必须存在。
+    /// `description` 与 `source` / `sample` 字段都是可选的;`pipeline:` 必须存在或简写形式。
     fn parse_flow_decl(&mut self) -> Result<Stmt, String> {
         self.expect(Token::Flow)?;
         let name = match self.current_token().clone() {
@@ -942,38 +1928,134 @@ impl Parser {
         let mut source: Option<Expr> = None;
         let mut pipeline: Option<Expr> = None;
 
-        while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
-            match self.current_token().clone() {
-                Token::Source => {
-                    self.advance();
-                    self.expect(Token::Colon)?;
-                    let expr = self.parse_expr()?;
+        // 检查是否是简写 flow { 表达式/语句 }（非关键字开头）
+        let is_shorthand = !matches!(self.current_token(), Token::Source | Token::Sample | Token::Pipeline | Token::RightBrace | Token::Eof);
+        if is_shorthand {
+            // 简写: 支持语句块（flow x { let a = 1; a + 2 }）或单表达式
+            let mut stmts: Vec<Stmt> = Vec::new();
+            let stmt_start_tokens: &[Token] = &[
+                Token::Let, Token::Fn, Token::If, Token::While, Token::For,
+                Token::Loop, Token::Return, Token::Break, Token::Continue,
+            ];
+            while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                let cur = self.current_token().clone();
+                if stmt_start_tokens.contains(&cur) {
+                    stmts.push(self.parse_stmt()?);
                     self.eat(Token::Semicolon);
-                    source = Some(expr);
+                } else {
+                    // 表达式作为最后一条
+                    let expr = self.parse_expr()?;
+                    stmts.push(Stmt::Expr(expr));
+                    self.eat(Token::Semicolon);
                 }
-                Token::Sample => {
-                    // v0.1 暂不实现时间调度,跳过整个 sample 字段
-                    self.advance();
-                    self.expect(Token::Colon)?;
-                    // 跳过到下一个分号
-                    while !self.check(Token::Semicolon) && !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+            }
+            // 取最后一个表达式（或语句块）作为 pipeline
+            let last_expr = if stmts.is_empty() {
+                Expr::None
+            } else if let Stmt::Expr(e) = stmts.remove(stmts.len() - 1) {
+                e
+            } else {
+                // 如果最后一条是非表达式语句，用 BlockExpr 包装全部
+                let block = Block { stmts };
+                Expr::BlockExpr(block)
+            };
+            pipeline = Some(last_expr);
+        } else {
+            while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                match self.current_token().clone() {
+                    Token::Source => {
                         self.advance();
+                        self.expect(Token::Colon)?;
+                        // 可选: source: <TypeAnnotation> = <expr>
+                        // 先尝试解析 TypeAnnotation, 如果有 = 号
+                        let saved = self.pos;
+                        let maybe_type = self.parse_type_annotation();
+                        if maybe_type.is_ok() && self.check(Token::Assign) {
+                            // 有类型+赋值, 跳过 TypeAnnotation（已解析）和 = 号
+                            self.advance(); // =
+                            let expr = self.parse_expr()?;
+                            self.eat(Token::Semicolon);
+                            source = Some(expr);
+                        } else {
+                            // 无类型或解析失败, 回退为直接 parse_expr
+                            self.pos = saved;
+                            let expr = self.parse_expr()?;
+                            self.eat(Token::Semicolon);
+                            source = Some(expr);
+                        }
                     }
-                    self.eat(Token::Semicolon);
+                    Token::Sample => {
+                        // v0.1 暂不实现时间调度,跳过整个 sample 字段
+                        self.advance();
+                        self.expect(Token::Colon)?;
+                        // 跳过到下一个分号
+                        while !self.check(Token::Semicolon) && !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                            self.advance();
+                        }
+                        self.eat(Token::Semicolon);
+                    }
+                    Token::Pipeline => {
+                        self.advance();
+                        self.expect(Token::Colon)?;
+                        let expr = self.parse_expr()?;
+                        self.eat(Token::Semicolon);
+                        pipeline = Some(expr);
+                    }
+                    Token::Ident(field_name) => {
+                        // 非关键字字段: on_player_join(p) { ... } 或 field: Type = value
+                        // 简化处理：吞到分号或匹配右花括号后（嵌套 {} 保护）
+                        self.advance(); // field_name
+                        // 如果接下来是 ( 则可能是事件处理器函数
+                        if self.check(Token::LeftParen) {
+                            // 事件处理器: on_xxx(args) { ... } - 吞到匹配的 }
+                            // 先吞 ( ... )
+                            self.advance(); // (
+                            let mut depth = 1;
+                            while depth > 0 && !self.check(Token::Eof) {
+                                match self.current_token() {
+                                    Token::LeftParen => { depth += 1; self.advance(); }
+                                    Token::RightParen => { depth -= 1; if depth > 0 { self.advance(); } }
+                                    _ => { self.advance(); }
+                                }
+                            }
+                            self.eat(Token::RightParen);
+                        } else if self.check(Token::Colon) {
+                            // field: <maybeType> = <value>;
+                            self.advance(); // :
+                            let _ = self.parse_type_annotation();
+                            if self.check(Token::Assign) { self.advance(); let _ = self.parse_expr(); }
+                            self.eat(Token::Semicolon);
+                            continue;
+                        }
+                        // 如果接下来是 { 吞到匹配的 }
+                        if self.check(Token::LeftBrace) {
+                            self.advance();
+                            let mut depth = 1;
+                            while depth > 0 && !self.check(Token::Eof) {
+                                match self.current_token() {
+                                    Token::LeftBrace => { depth += 1; self.advance(); }
+                                    Token::RightBrace => { depth -= 1; if depth > 0 { self.advance(); } }
+                                    _ => { self.advance(); }
+                                }
+                            }
+                            self.eat(Token::RightBrace);
+                        }
+                        self.eat(Token::Semicolon);
+                    }
+                    other => return Err(format!("Expected 'source' / 'sample' / 'pipeline' in flow block, found {}", other)),
                 }
-                Token::Pipeline => {
-                    self.advance();
-                    self.expect(Token::Colon)?;
-                    let expr = self.parse_expr()?;
-                    self.eat(Token::Semicolon);
-                    pipeline = Some(expr);
-                }
-                other => return Err(format!("Expected 'source' / 'sample' / 'pipeline' in flow block, found {}", other)),
             }
         }
         self.expect(Token::RightBrace)?;
 
-        let pipeline = pipeline.ok_or_else(|| format!("flow {} missing 'pipeline:' section", name))?;
+        if !is_shorthand {
+            if pipeline.is_none() {
+                return Err(format!("missing 'pipeline:' in flow block '{}'", name));
+            }
+        }
+
+        // 允许简写 flow 中没有 pipeline（此时用 source 替代，或用 Expr::None 占位）
+        let pipeline = pipeline.unwrap_or_else(|| source.clone().unwrap_or(Expr::None));
         Ok(Stmt::FlowDecl { name, description, source, pipeline })
     }
 
@@ -1010,6 +2092,20 @@ impl Parser {
             self.advance();
             match self.current_token().clone() {
                 Token::Ident(s) => { path.push(s); self.advance(); }
+                Token::LeftBrace => {
+                    // 分组导入: use a::b::{X, Y, Z}
+                    self.advance();
+                    while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
+                        if let Token::Ident(s2) = self.current_token().clone() {
+                            self.advance();
+                            // 可选 as alias
+                            if self.check(Token::As) { self.advance(); if let Token::Ident(_) = self.current_token().clone() { self.advance(); } }
+                        }
+                        if !self.eat(Token::Comma) { break; }
+                    }
+                    self.expect(Token::RightBrace)?;
+                    break;
+                }
                 other => return Err(format!("Expected identifier after '::' in use path, found {}", other)),
             }
         }
@@ -1069,13 +2165,27 @@ impl Parser {
     /// 解析 match 表达式
     fn parse_match_expr(&mut self) -> Result<Expr, String> {
         self.expect(Token::Match)?;
+        self.suppress_call_suffix_block = true;
         let scrutinee = self.parse_expr()?;
+        self.suppress_call_suffix_block = false;
         self.expect(Token::LeftBrace)?;
         let mut arms = Vec::new();
         while !self.check(Token::RightBrace) && !self.check(Token::Eof) {
             let pattern = self.parse_pattern()?;
             self.expect(Token::FatArrow)?;
-            let body = self.parse_block()?;
+            // 支持单行 arm: => expr (无大括号) 或 => { block }
+            let body = if self.check(Token::LeftBrace) {
+                self.parse_block()?
+            } else {
+                // 单行表达式 arm: 解析到逗号/右花括号为止, 包装成 Block
+                let saved = self.pos;
+                let mut stmts = Vec::new();
+                // 表达式可能包含逗号 (如 println("a", b)), 因此需要小心:
+                // 用简单策略: parse_expr() 直到表达式完成
+                let expr = self.parse_expr()?;
+                stmts.push(Stmt::Expr(expr));
+                Block { stmts }
+            };
             arms.push(MatchArm { pattern, body });
             self.eat(Token::Comma);
         }
@@ -1096,6 +2206,75 @@ impl Parser {
             Token::Str(s) => { self.advance(); Ok(Pattern::Literal(Expr::Str(s))) }
             Token::Bool(b) => { self.advance(); Ok(Pattern::Literal(Expr::Bool(b))) }
             Token::None => { self.advance(); Ok(Pattern::Literal(Expr::None)) }
+            Token::Ok | Token::Err | Token::Some => {
+                let name = format!("{}", token);
+                self.advance();
+                // ok(err(some) 都当作 Ident(name) 来处理: 支持 ok(v) / Err(e) / Some(x) 构造
+                if self.check(Token::DoubleColon) {
+                    self.advance();
+                    let variant = match self.current_token().clone() {
+                        Token::Ident(s) => { self.advance(); s }
+                        other => return Err(format!("Expected variant name after '::', found {}", other)),
+                    };
+                    if self.check(Token::LeftParen) {
+                        self.advance();
+                        let mut bindings = Vec::new();
+                        if !self.check(Token::RightParen) {
+                            loop {
+                                match self.current_token().clone() {
+                                    Token::Ident(s) => { self.advance(); bindings.push(s) }
+                                    Token::Underscore => { self.advance(); bindings.push("_".to_string()) }
+                                    Token::Ok | Token::Err | Token::Some => {
+                                        let s = format!("{}", self.current_token());
+                                        self.advance();
+                                        bindings.push(s);
+                                    }
+                                    other => return Err(format!("Expected binding in pattern, found {}", other)),
+                                }
+                                if !self.eat(Token::Comma) { break; }
+                                if self.check(Token::RightParen) || self.check(Token::Eof) { break; }
+                            }
+                        }
+                        self.expect(Token::RightParen)?;
+                        Ok(Pattern::EnumVariantWithPayload {
+                            type_name: name,
+                            variant,
+                            bindings,
+                        })
+                    } else {
+                        Ok(Pattern::EnumVariant { type_name: name, variant })
+                    }
+                } else if self.check(Token::LeftParen) {
+                    // 构造函数/元组结构模式: Variant(bindings...) 或 Ok(v)/Err(e)
+                    self.advance();
+                    let mut bindings = Vec::new();
+                    if !self.check(Token::RightParen) {
+                        loop {
+                            match self.current_token().clone() {
+                                Token::Ident(s) => { self.advance(); bindings.push(s) }
+                                Token::Underscore => { self.advance(); bindings.push("_".to_string()) }
+                                Token::Ok | Token::Err | Token::Some => {
+                                    let s = format!("{}", self.current_token());
+                                    self.advance();
+                                    bindings.push(s);
+                                }
+                                other => return Err(format!("Expected binding in pattern, found {}", other)),
+                            }
+                            if !self.eat(Token::Comma) { break; }
+                            if self.check(Token::RightParen) || self.check(Token::Eof) { break; }
+                        }
+                    }
+                    self.expect(Token::RightParen)?;
+                    Ok(Pattern::EnumVariantWithPayload {
+                        type_name: String::new(),
+                        variant: name,
+                        bindings,
+                    })
+                } else {
+                    // 单纯标识符: 绑定变量
+                    Ok(Pattern::Bind(name))
+                }
+            }
             Token::Ident(name) => {
                 self.advance();
                 // 检查是否是路径: Type::Variant
@@ -1117,6 +2296,7 @@ impl Parser {
                                     other => return Err(format!("Expected binding in pattern, found {}", other)),
                                 }
                                 if !self.eat(Token::Comma) { break; }
+                                if self.check(Token::RightParen) || self.check(Token::Eof) { break; }
                             }
                         }
                         self.expect(Token::RightParen)?;
@@ -1128,6 +2308,27 @@ impl Parser {
                     } else {
                         Ok(Pattern::EnumVariant { type_name: name, variant })
                     }
+                } else if self.check(Token::LeftParen) {
+                    // 构造函数/元组结构模式: Variant(bindings...) 或 Ok(v)/Err(e)
+                    self.advance();
+                    let mut bindings = Vec::new();
+                    if !self.check(Token::RightParen) {
+                        loop {
+                            match self.current_token().clone() {
+                                Token::Ident(s) => { self.advance(); bindings.push(s) }
+                                Token::Underscore => { self.advance(); bindings.push("_".to_string()) }
+                                other => return Err(format!("Expected binding in pattern, found {}", other)),
+                            }
+                            if !self.eat(Token::Comma) { break; }
+                            if self.check(Token::RightParen) || self.check(Token::Eof) { break; }
+                        }
+                    }
+                    self.expect(Token::RightParen)?;
+                    Ok(Pattern::EnumVariantWithPayload {
+                        type_name: String::new(),
+                        variant: name,
+                        bindings,
+                    })
                 } else {
                     // 单纯标识符: 绑定变量
                     Ok(Pattern::Bind(name))
@@ -1139,7 +2340,50 @@ impl Parser {
 
     fn parse_type_annotation(&mut self) -> Result<TypeAnnotation, String> {
         let token = self.current_token().clone();
+        // 指针类型开头: *mut T / *T
+        if matches!(token, Token::Star) {
+            self.advance();
+            let _is_mut = self.eat(Token::Mut);
+            let inner = self.parse_type_annotation()?;
+            return Ok(TypeAnnotation::Ptr(Box::new(inner)));
+        }
         let inner = match token {
+            Token::Fn => {
+                // 函数指针类型: fn(x: f32, y: f32) -> f32 或 fn() -> void
+                self.advance();
+                self.expect(Token::LeftParen)?;
+                while !self.check(Token::RightParen) && !self.check(Token::Eof) {
+                    // 吞参数 (可能 x: Type 或只有 Type)
+                    if let Token::Ident(_) = self.current_token().clone() {
+                        let saved = self.pos;
+                        self.advance();
+                        if !self.check(Token::Colon) {
+                            self.pos = saved; // 只有 Type, 不是 name: Type
+                            let _ = self.parse_type_annotation();
+                        } else {
+                            self.advance(); // :
+                            let _ = self.parse_type_annotation();
+                        }
+                    } else {
+                        let _ = self.parse_type_annotation();
+                    }
+                    if !self.eat(Token::Comma) { break; }
+                }
+                self.expect(Token::RightParen)?;
+                if self.eat(Token::Arrow) {
+                    let _ret = self.parse_type_annotation();
+                }
+                return Ok(TypeAnnotation::Named("fn".to_string()));
+            }
+            Token::Ampersand => {
+                self.advance();
+                let mut is_mut = false;
+                if self.eat(Token::Mut) {
+                    is_mut = true;
+                }
+                let inner = self.parse_type_annotation()?;
+                return Ok(TypeAnnotation::Ref(Box::new(inner), is_mut));
+            }
             Token::Ident(ref s) => {
                 let s = s.clone();
                 self.advance();
@@ -1170,11 +2414,73 @@ impl Parser {
             }
             Token::LeftParen => {
                 self.advance();
-                self.expect(Token::RightParen)?;
-                Ok(TypeAnnotation::Unit)
+                if self.check(Token::RightParen) {
+                    self.advance();
+                    Ok(TypeAnnotation::Unit)
+                } else {
+                    let first = self.parse_type_annotation()?;
+                    let mut elements = vec![first];
+                    while self.eat(Token::Comma) {
+                        if self.check(Token::RightParen) { break; }
+                        elements.push(self.parse_type_annotation()?);
+                    }
+                    self.expect(Token::RightParen)?;
+                    if elements.len() == 1 {
+                        Ok(elements.into_iter().next().unwrap())
+                    } else {
+                        Ok(TypeAnnotation::Tuple(elements))
+                    }
+                }
+            }
+            Token::LeftBracket => {
+                // 数组类型: [T; N]
+                self.advance();
+                let elem_type = self.parse_type_annotation()?;
+                let size = if self.eat(Token::Semicolon) {
+                    match self.current_token().clone() {
+                        Token::Int(n) => { self.advance(); n as u64 }
+                        _ => {
+                            // 非字面量大小：吞到 ] 为止，默认 0
+                            let mut sz = 0u64;
+                            while !self.check(Token::RightBracket) && !self.check(Token::Eof) {
+                                self.advance();
+                            }
+                            sz
+                        }
+                    }
+                } else { 0 };
+                self.expect(Token::RightBracket)?;
+                Ok(TypeAnnotation::Array(Box::new(elem_type), size))
+            }
+            Token::Lt => {
+                // D类占位符: <type> 占位语法
+                self.skip_angle_bracket_placeholder();
+                Ok(TypeAnnotation::Named("__Placeholder".to_string()))
+            }
+            Token::Dot => {
+                // D类占位符: ... 返回类型
+                self.skip_ellipsis_if_present();
+                Ok(TypeAnnotation::Named("__Ellipsis".to_string()))
             }
             _ => Err(format!("Expected type annotation, found {}", token)),
         }?;
+
+        // 处理泛型: Named<T> / Named<K, V>
+        let inner = if self.check(Token::Lt) {
+            self.advance();
+            let mut args = Vec::new();
+            if !self.check(Token::Gt) {
+                args.push(self.parse_type_annotation()?);
+                while self.eat(Token::Comma) {
+                    if self.check(Token::Gt) { break; }
+                    args.push(self.parse_type_annotation()?);
+                }
+            }
+            self.expect(Token::Gt)?;
+            TypeAnnotation::Generic(Box::new(inner), args)
+        } else {
+            inner
+        };
 
         // 解析指针类型: *mut T
         if self.check(Token::Star) {

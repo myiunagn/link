@@ -286,10 +286,15 @@ impl LlvmBackend {
             }
             Stmt::Assign { target, value } => {
                 let val = self.generate_expr(value)?;
-                let alloc = self.var_map.get(target)
-                    .ok_or_else(|| format!("Undefined variable: {}", target))?;
-                self.builder.build_store(*alloc, val)
-                    .map_err(|e| format!("Store error: {}", e))?;
+                match target.as_ref() {
+                    Expr::Ident(name) => {
+                        let alloc = self.var_map.get(name)
+                            .ok_or_else(|| format!("Undefined variable: {}", name))?;
+                        self.builder.build_store(*alloc, val)
+                            .map_err(|e| format!("Store error: {}", e))?;
+                    }
+                    _ => return Err(format!("LLVM backend only supports simple variable assignment, got {:?}", target)),
+                }
             }
             Stmt::Expr(expr) => {
                 self.generate_expr(expr)?;
@@ -419,6 +424,9 @@ impl LlvmBackend {
                     .map_err(|e| e.to_string())?;
 
                 self.builder.position_at_end(end_bb);
+            }
+            Stmt::ForIterable { var_name: _, iterable: _, body: _ } => {
+                return Err("LLVM backend does not support ForIterable yet".to_string());
             }
             Stmt::Loop(body) => {
                 let current_fn = self.builder.get_insert_block()

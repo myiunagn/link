@@ -114,6 +114,22 @@ impl CBackend {
             TypeAnnotation::Stream(_) => {
                 Ok("struct LinkStream*".to_string())
             }
+            TypeAnnotation::Ref(inner, _) => Self::map_type(inner),
+            TypeAnnotation::Generic(base, _) => Self::map_type(base),
+            TypeAnnotation::Array(elem, _) => {
+                let e = Self::map_type(elem)?;
+                Ok(format!("{}*", e))
+            }
+            TypeAnnotation::Tuple(elems) => {
+                let fields: Vec<String> = elems.iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        let t = Self::map_type(e).unwrap_or_else(|_| "int64_t".to_string());
+                        format!("{} f{}", t, i)
+                    })
+                    .collect();
+                Ok(format!("struct {{ {} }}", fields.join("; ")))
+            }
         }
     }
 
@@ -459,6 +475,22 @@ impl CBackend {
             Expr::Await(_) => {
                 Err("await not supported in C backend (use async runtime)".to_string())
             }
+            Expr::Try(_) => {
+                Err("try! not supported in C backend yet".to_string())
+            }
+            Expr::Lambda { .. } => {
+                Err("lambda/anonymous functions not supported in C backend".to_string())
+            }
+            Expr::Ref(inner, _) => self.generate_expr(inner),
+            Expr::Deref(inner) => self.generate_expr(inner),
+            Expr::AsCast(expr, _) => self.generate_expr(expr),
+            Expr::Tuple(elems) => {
+                let mut parts = Vec::new();
+                for e in elems {
+                    parts.push(self.generate_expr(e)?);
+                }
+                Ok(format!("((struct {{ /* tuple */ }}){{ /* {} */ }}", parts.join(", ")))
+            }
         }
     }
 
@@ -536,11 +568,9 @@ impl CBackend {
                 }
             }
             Stmt::Assign { target, value } => {
+                let target_str = self.generate_expr(target)?;
                 let val_str = self.generate_expr(value)?;
-                let c_name = self.var_map.get(target)
-                    .cloned()
-                    .unwrap_or_else(|| target.clone());
-                lines.push(format!("{}{} = {};", self.indent_str(), c_name, val_str));
+                lines.push(format!("{}{} = {};", self.indent_str(), target_str, val_str));
             }
             Stmt::Expr(expr) => {
                 let expr_str = self.generate_expr(expr)?;
@@ -593,6 +623,27 @@ impl CBackend {
                 self.indent += 1;
                 let body_lines = self.generate_block_lines(body)?;
                 lines.extend(body_lines);
+                self.indent -= 1;
+                lines.push(format!("{}}}", self.indent_str()));
+            }
+            Stmt::ForIterable { var_name, iterable, body } => {
+                let iter_str = self.generate_expr(iterable)?;
+                let iter_cvar = format!("__iter_{}", self.tmp_counter);
+                self.tmp_counter += 1;
+                let idx_cvar = format!("__idx_{}", self.tmp_counter);
+                self.tmp_counter += 1;
+                let c_name = var_name.clone();
+                self.var_map.insert(var_name.clone(), c_name.clone());
+                self.var_type_map.insert(var_name.clone(), "LinkValue*".to_string());
+
+                lines.push(format!("{}LinkValue* {} = {};", self.indent_str(), iter_cvar, iter_str));
+                lines.push(format!("{}int64_t {} = 0;", self.indent_str(), idx_cvar));
+                lines.push(format!("{}while ({} < list_len({})) {{", self.indent_str(), idx_cvar, iter_cvar));
+                self.indent += 1;
+                lines.push(format!("{}LinkValue* {} = list_get({}, {});", self.indent_str(), c_name, iter_cvar, idx_cvar));
+                let body_lines = self.generate_block_lines(body)?;
+                lines.extend(body_lines);
+                lines.push(format!("{}{}++;", self.indent_str(), idx_cvar));
                 self.indent -= 1;
                 lines.push(format!("{}}}", self.indent_str()));
             }
@@ -839,7 +890,7 @@ impl CBackend {
                     self.generate_stmt(stmt)?;
                 }
                 Stmt::LetDecl { .. } | Stmt::Assign { .. } | Stmt::If { .. }
-                | Stmt::While { .. } | Stmt::For { .. } | Stmt::Loop(_)
+                | Stmt::While { .. } | Stmt::For { .. } | Stmt::ForIterable { .. } | Stmt::Loop(_)
                 | Stmt::Break | Stmt::Continue | Stmt::Return(_) | Stmt::Match { .. } => {
                     has_toplevel_code = true;
                     let saved_indent = self.indent;
@@ -957,6 +1008,40 @@ impl PythonBackend {
         }
     }
 
+    /// 生成管道运算符代码: `a | b(c)` => `b(a, c)`
+    /// 语法上右结合，语义上左结合:
+    /// `a | b | c` 解析为 `a | (b | c)`, 语义为 `c(b(a))`
+    fn generate_pipe(&mut self, left: &Expr, right: &Expr) -> Result<String, String> {
+        let left_str = self.generate_expr(left)?;
+        self.apply_pipe(left_str, right)
+    }
+
+    /// 将 left_str 作为输入，应用管道右侧 right
+    /// `left_str | right` 语义:
+    /// - `left_str | f(...)` => `f(left_str, ...)`
+    /// - `left_str | f` => `f(left_str)`
+    /// - `left_str | (mid | tail)` => `tail(mid(left_str))`
+    fn apply_pipe(&mut self, left_str: String, right: &Expr) -> Result<String, String> {
+        match right {
+            Expr::Call { callee, args } => {
+                let mut all_args = vec![left_str];
+                for arg in args {
+                    all_args.push(self.generate_expr(arg)?);
+                }
+                Ok(format!("{}({})", callee, all_args.join(", ")))
+            }
+            Expr::Ident(name) => {
+                Ok(format!("{}({})", name, left_str))
+            }
+            // 嵌套管道: left_str | (mid | tail) => tail(mid(left_str))
+            Expr::Binary { op: BinOp::Pipe, left: mid, right: tail } => {
+                let mid_result = self.apply_pipe(left_str, mid)?;
+                self.apply_pipe(mid_result, tail)
+            }
+            _ => Err("pipe right-hand side must be a call or function name".to_string()),
+        }
+    }
+
     fn indent_str(&self) -> String {
         "    ".repeat(self.indent)
     }
@@ -978,6 +1063,19 @@ impl PythonBackend {
             TypeAnnotation::Named(n) => n.clone(),
             TypeAnnotation::Ptr(_) => "Any".to_string(),
             TypeAnnotation::Stream(_) => "list".to_string(),
+            TypeAnnotation::Ref(inner, _) => Self::py_type(inner),
+            TypeAnnotation::Generic(base, _) => Self::py_type(base),
+            TypeAnnotation::Array(elem, _) => format!("list[{}]", Self::py_type(elem)),
+            TypeAnnotation::Tuple(elems) => {
+                if elems.is_empty() {
+                    "tuple".to_string()
+                } else {
+                    let parts: Vec<String> = elems.iter()
+                        .map(|e| Self::py_type(e))
+                        .collect();
+                    format!("tuple[{}]", parts.join(", "))
+                }
+            }
         }
     }
 
@@ -1006,6 +1104,10 @@ impl PythonBackend {
                 }
             }
             Expr::Binary { op, left, right } => {
+                // 管道运算符 `a | b(c)` 等价于 `b(a, c)`（右结合）
+                if let BinOp::Pipe = op {
+                    return self.generate_pipe(left, right);
+                }
                 let left_str = self.generate_expr(left)?;
                 let right_str = self.generate_expr(right)?;
                 let op_str = match op {
@@ -1022,7 +1124,7 @@ impl PythonBackend {
                     BinOp::GtEq => ">=",
                     BinOp::And => "and",
                     BinOp::Or => "or",
-                    BinOp::Pipe => return Err("pipe operator not supported in Python backend".to_string()),
+                    BinOp::Pipe => unreachable!(),
                 };
                 Ok(format!("({} {} {})", left_str, op_str, right_str))
             }
@@ -1163,6 +1265,17 @@ impl PythonBackend {
                 }
                 Ok(format!("[{}]", item_strs.join(", ")))
             }
+            Expr::Tuple(elems) => {
+                let mut elem_strs = Vec::new();
+                for e in elems {
+                    elem_strs.push(self.generate_expr(e)?);
+                }
+                if elem_strs.len() == 1 {
+                    Ok(format!("({},)", elem_strs[0]))
+                } else {
+                    Ok(format!("({})", elem_strs.join(", ")))
+                }
+            }
             Expr::Index { target, index } => {
                 let target_str = self.generate_expr(target)?;
                 let index_str = self.generate_expr(index)?;
@@ -1262,6 +1375,47 @@ impl PythonBackend {
                 let inner_str = self.generate_expr(inner)?;
                 Ok(format!("await {}", inner_str))
             }
+            Expr::Try(inner) => {
+                let inner_str = self.generate_expr(inner)?;
+                Ok(format!("__link_try({})", inner_str))
+            }
+            Expr::Lambda { params, body, .. } => {
+                let param_str: Vec<String> = params.iter().map(|(n, _)| n.clone()).collect();
+                // 简单情况: 函数体只有一条 return 语句 => 使用 Python lambda
+                if body.stmts.len() == 1 {
+                    if let Stmt::Return(Some(ret_expr)) = &body.stmts[0] {
+                        let ret_str = self.generate_expr(ret_expr)?;
+                        return Ok(format!("lambda {}: {}", param_str.join(", "), ret_str));
+                    }
+                }
+                // 复杂情况: 函数体有多条语句 => 生成嵌套 def（需作为前置语句）
+                // 由于 generate_expr 只能返回表达式字符串，这里使用立即调用方式
+                let lambda_name = format!("__lambda_{}", self.tmp_counter);
+                self.tmp_counter += 1;
+                // 保存当前缩进，生成 def 函数体
+                let saved_indent = self.indent;
+                self.indent = 1;
+                let body_lines = self.generate_block_lines(body)?;
+                self.indent = saved_indent;
+                let mut body_code = String::new();
+                for line in &body_lines {
+                    body_code.push_str("    ");
+                    body_code.push_str(line);
+                    body_code.push('\n');
+                }
+                if body_lines.is_empty() {
+                    body_code.push_str("    pass\n");
+                }
+                // 使用立即调用表达式: (lambda_name = None; def lambda_name(...): ...; lambda_name) 不能在表达式内
+                // 折中方案: 用 exec 模拟，或者提示用户简化 lambda
+                Err(format!(
+                    "complex lambda body not supported in Python backend (use single return statement):\ndef {}({}):\n{}",
+                    lambda_name, param_str.join(", "), body_code
+                ))
+            }
+            Expr::Ref(inner, _) => self.generate_expr(inner),
+            Expr::Deref(inner) => self.generate_expr(inner),
+            Expr::AsCast(expr, _) => self.generate_expr(expr),
         }
     }
 
@@ -1291,9 +1445,9 @@ impl PythonBackend {
                 }
             }
             Stmt::Assign { target, value } => {
+                let target_str = self.generate_expr(target)?;
                 let val_str = self.generate_expr(value)?;
-                let py_name = self.var_map.get(target).cloned().unwrap_or_else(|| target.clone());
-                lines.push(format!("{}{} = {}", self.indent_str(), py_name, val_str));
+                lines.push(format!("{}{} = {}", self.indent_str(), target_str, val_str));
             }
             Stmt::Expr(expr) => {
                 let expr_str = self.generate_expr(expr)?;
@@ -1348,6 +1502,20 @@ impl PythonBackend {
                 let py_name = var_name.clone();
                 self.var_map.insert(var_name.clone(), py_name.clone());
                 lines.push(format!("{}for {} in range({}, {}):", self.indent_str(), py_name, start_str, end_str));
+                self.indent += 1;
+                if body.stmts.is_empty() {
+                    lines.push(format!("{}pass", self.indent_str()));
+                } else {
+                    let body_lines = self.generate_block_lines(body)?;
+                    lines.extend(body_lines);
+                }
+                self.indent -= 1;
+            }
+            Stmt::ForIterable { var_name, iterable, body } => {
+                let iter_str = self.generate_expr(iterable)?;
+                let py_name = var_name.clone();
+                self.var_map.insert(var_name.clone(), py_name.clone());
+                lines.push(format!("{}for {} in {}:", self.indent_str(), py_name, iter_str));
                 self.indent += 1;
                 if body.stmts.is_empty() {
                     lines.push(format!("{}pass", self.indent_str()));
@@ -1459,7 +1627,11 @@ impl PythonBackend {
                 lines.push(format!("{}{} = {}", self.indent_str(), tmp, scrut_str));
 
                 let mut first = true;
+                let mut emitted_else = false;
                 for arm in arms {
+                    if emitted_else {
+                        break;
+                    }
                     let cond_str = match &arm.pattern {
                         Pattern::Wildcard => None,
                         Pattern::Literal(expr) => {
@@ -1498,6 +1670,7 @@ impl PythonBackend {
                                 }
                                 self.indent -= 1;
                                 first = false;
+                                emitted_else = true;
                                 continue;
                             }
                         }
@@ -1515,6 +1688,7 @@ impl PythonBackend {
                                     lines.extend(arm_lines);
                                 }
                                 self.indent -= 1;
+                                emitted_else = true;
                                 continue;
                             }
                         }
@@ -1532,10 +1706,43 @@ impl PythonBackend {
                     lines.push(format!("{}pass", self.indent_str()));
                 }
             }
-            Stmt::ExternDecl { .. } => {
-                // extern 声明在 Python 中忽略
+            Stmt::ExternDecl { language: _, module: _, decls } => {
+                for sig in decls {
+                    let mut param_strs = Vec::new();
+                    for (pname, _) in &sig.params {
+                        param_strs.push(pname.clone());
+                    }
+                    let prefix = if sig.is_async { "async " } else { "" };
+                    let mut fn_code = format!("{}def {}({}):\n", prefix, sig.name, param_strs.join(", "));
+                    let default = match &sig.return_type {
+                        Some(rt) => match rt {
+                            TypeAnnotation::I8 | TypeAnnotation::I16 | TypeAnnotation::I32 | TypeAnnotation::I64
+                            | TypeAnnotation::U8 | TypeAnnotation::U16 | TypeAnnotation::U32 | TypeAnnotation::U64
+                            | TypeAnnotation::USize => "    return 0\n".to_string(),
+                            TypeAnnotation::F32 | TypeAnnotation::F64 => "    return 0.0\n".to_string(),
+                            TypeAnnotation::Bool => "    return False\n".to_string(),
+                            TypeAnnotation::Str | TypeAnnotation::Void => "    return \"\"\n".to_string(),
+                            TypeAnnotation::Unit => "    return None\n".to_string(),
+                            _ => "    return None\n".to_string(),
+                        },
+                        None => "    return None\n".to_string(),
+                    };
+                    fn_code.push_str(&default);
+                    self.functions.push(fn_code);
+                }
             }
-            Stmt::ExportDecl { .. } => {}
+            Stmt::ExportDecl { decls, .. } => {
+                for sig in decls {
+                    let mut param_strs = Vec::new();
+                    for (pname, _) in &sig.params {
+                        param_strs.push(pname.clone());
+                    }
+                    let prefix = if sig.is_async { "async " } else { "" };
+                    let mut fn_code = format!("{}def {}({}):\n", prefix, sig.name, param_strs.join(", "));
+                    fn_code.push_str("    pass\n");
+                    self.functions.push(fn_code);
+                }
+            }
             Stmt::FlowDecl { .. } => {
                 return Err("flow not supported in Python backend".to_string());
             }
@@ -1590,6 +1797,19 @@ impl PythonBackend {
         output.push_str("import math\n");
         output.push_str("import time\n");
         output.push_str("\n");
+
+        // 预置 stream 相关函数（Link 语义: map(stream, fn) 参数顺序与 Python 内置相反）
+        output.push_str("def stream(iterable):\n");
+        output.push_str("    return list(iterable)\n\n");
+        output.push_str("def map(source, fn):\n");
+        output.push_str("    return [fn(x) for x in source]\n\n");
+        output.push_str("def filter(source, fn):\n");
+        output.push_str("    return [x for x in source if fn(x)]\n\n");
+        output.push_str("def for_each(source, fn):\n");
+        output.push_str("    for x in source:\n");
+        output.push_str("        fn(x)\n\n");
+        output.push_str("def collect(source):\n");
+        output.push_str("    return list(source)\n\n");
 
         for class in &self.classes {
             output.push_str(class);
@@ -1824,7 +2044,12 @@ impl WasmBackend {
             Stmt::Assign { target, value } => {
                 let val_code = self.generate_expr(value)?;
                 let mut code = val_code;
-                code.push_str(&format!("    (local.set ${})\n", target));
+                match target.as_ref() {
+                    Expr::Ident(name) => {
+                        code.push_str(&format!("    (local.set ${})\n", name));
+                    }
+                    _ => return Err(format!("WASM backend only supports simple variable assignment, got {:?}", target)),
+                }
                 Ok(code)
             }
             Stmt::Expr(expr) => {
@@ -1924,6 +2149,9 @@ impl WasmBackend {
                 code.push_str("      )\n");
                 code.push_str("    )\n");
                 Ok(code)
+            }
+            Stmt::ForIterable { var_name: _, iterable: _, body: _ } => {
+                Err("WASM backend does not support ForIterable yet".to_string())
             }
             Stmt::Loop(body) => {
                 let loop_label = self.fresh_label();

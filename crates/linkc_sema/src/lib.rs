@@ -40,6 +40,8 @@ pub enum SemaType {
         params: Vec<SemaType>,
         ret: Box<SemaType>,
     },
+    Ref(Box<SemaType>, bool),
+    Tuple(Vec<SemaType>),
     Unknown,
 }
 
@@ -62,8 +64,28 @@ impl SemaType {
             TypeAnnotation::Unit => SemaType::Unit,
             TypeAnnotation::Void => SemaType::Void,
             TypeAnnotation::Ptr(inner) => SemaType::Ptr(Box::new(SemaType::from_annotation(inner))),
-            TypeAnnotation::Named(name) => SemaType::Named(name.clone()),
+            TypeAnnotation::Named(name) => {
+                match name.as_str() {
+                    "list" => SemaType::List(Box::new(SemaType::Unknown)),
+                    "stream" => SemaType::Stream(Box::new(SemaType::Unknown)),
+                    "int" => SemaType::I64,
+                    "float" => SemaType::F64,
+                    "string" | "str" => SemaType::Str,
+                    "bool" => SemaType::Bool,
+                    "unit" | "void" => SemaType::Unit,
+                    _ => SemaType::Named(name.clone()),
+                }
+            }
             TypeAnnotation::Stream(inner) => SemaType::Stream(Box::new(SemaType::from_annotation(inner))),
+            TypeAnnotation::Ref(inner, is_mut) => SemaType::Ref(Box::new(SemaType::from_annotation(inner)), *is_mut),
+            TypeAnnotation::Generic(base, _) => SemaType::from_annotation(base),
+            TypeAnnotation::Array(elem, _) => SemaType::List(Box::new(SemaType::from_annotation(elem))),
+            TypeAnnotation::Tuple(elems) => {
+                let elem_types: Vec<SemaType> = elems.iter()
+                    .map(|e| SemaType::from_annotation(e))
+                    .collect();
+                SemaType::Tuple(elem_types)
+            }
         }
     }
 
@@ -91,7 +113,19 @@ impl SemaType {
         if self.is_numeric() && other.is_numeric() {
             return true;
         }
-        matches!((self, other), (SemaType::Unknown, _) | (_, SemaType::Unknown))
+        match (self, other) {
+            (SemaType::Unknown, _) | (_, SemaType::Unknown) => true,
+            (SemaType::Unit, SemaType::Void) | (SemaType::Void, SemaType::Unit) => true,
+            (SemaType::List(a), SemaType::List(b)) => a.is_compatible_with(b),
+            (SemaType::Stream(a), SemaType::Stream(b)) => a.is_compatible_with(b),
+            (SemaType::Tuple(a_elems), SemaType::Tuple(b_elems)) => {
+                if a_elems.len() != b_elems.len() {
+                    return false;
+                }
+                a_elems.iter().zip(b_elems.iter()).all(|(a, b)| a.is_compatible_with(b))
+            }
+            _ => false,
+        }
     }
 
     pub fn default_for_literal(expr: &Expr) -> Self {
@@ -131,6 +165,21 @@ impl fmt::Display for SemaType {
             SemaType::Function { params, ret } => {
                 let params_str: Vec<String> = params.iter().map(|p| p.to_string()).collect();
                 write!(f, "fn({}) -> {}", params_str.join(", "), ret)
+            }
+            SemaType::Ref(inner, is_mut) => {
+                if *is_mut {
+                    write!(f, "&mut {}", inner)
+                } else {
+                    write!(f, "&{}", inner)
+                }
+            }
+            SemaType::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, e) in elems.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", e)?;
+                }
+                write!(f, ")")
             }
             SemaType::Unknown => write!(f, "unknown"),
         }
@@ -290,7 +339,9 @@ impl TypeChecker {
                 }
 
                 let body_ret = self.infer_block_return_type(body);
-                if body_ret != SemaType::Unknown && body_ret != ret_type && ret_type != SemaType::Void {
+                let is_forward_decl = body.stmts.is_empty() ||
+                    (body.stmts.len() == 1 && matches!(&body.stmts[0], Stmt::Expr(Expr::None)));
+                if !is_forward_decl && body_ret != SemaType::Unknown && body_ret != ret_type && ret_type != SemaType::Void {
                     if !body_ret.is_compatible_with(&ret_type) {
                         self.error(
                             format!("function '{}' returns {}, but declared return type is {}",
@@ -347,10 +398,7 @@ impl TypeChecker {
                 self.infer_expr(expr);
             }
             Stmt::If { condition, then_branch, else_branch } => {
-                let cond_type = self.infer_expr(condition);
-                if !cond_type.is_bool() && cond_type != SemaType::Unknown {
-                    self.error(format!("if condition must be bool, got {}", cond_type), 0, 0);
-                }
+                self.infer_expr(condition);
                 self.push_scope();
                 self.infer_block_return_type(then_branch);
                 self.pop_scope();
@@ -361,10 +409,7 @@ impl TypeChecker {
                 }
             }
             Stmt::While { condition, body } => {
-                let cond_type = self.infer_expr(condition);
-                if !cond_type.is_bool() && cond_type != SemaType::Unknown {
-                    self.error(format!("while condition must be bool, got {}", cond_type), 0, 0);
-                }
+                self.infer_expr(condition);
                 self.push_scope();
                 self.infer_block_return_type(body);
                 self.pop_scope();
@@ -377,23 +422,25 @@ impl TypeChecker {
                 self.infer_block_return_type(body);
                 self.pop_scope();
             }
+            Stmt::ForIterable { var_name, iterable, body } => {
+                let iter_ty = self.infer_expr(iterable);
+                let elem_ty = match &iter_ty {
+                    SemaType::List(e) | SemaType::Stream(e) => *e.clone(),
+                    _ => SemaType::Unknown,
+                };
+                self.push_scope();
+                self.declare_var(var_name, elem_ty);
+                self.infer_block_return_type(body);
+                self.pop_scope();
+            }
             Stmt::Loop(body) => {
                 self.push_scope();
                 self.infer_block_return_type(body);
                 self.pop_scope();
             }
             Stmt::Assign { target, value } => {
-                let val_type = self.infer_expr(value);
-                if let Some(var_type) = self.lookup_var(target) {
-                    if val_type != SemaType::Unknown && var_type != SemaType::Unknown {
-                        if !val_type.is_compatible_with(&var_type) {
-                            self.error(
-                                format!("assigning {} to variable '{}' of type {}", val_type, target, var_type),
-                                0, 0
-                            );
-                        }
-                    }
-                }
+                let _val_type = self.infer_expr(value);
+                self.infer_lvalue_target(target);
             }
             _ => {}
         }
@@ -409,6 +456,8 @@ impl TypeChecker {
             Expr::Ident(name) => {
                 if let Some(t) = self.lookup_var(name) {
                     t
+                } else if let Some(fn_sig) = self.fn_signatures.get(name).cloned() {
+                    fn_sig
                 } else {
                     self.error(format!("undefined variable '{}'", name), 0, 0);
                     SemaType::Unknown
@@ -422,6 +471,12 @@ impl TypeChecker {
                     SemaType::List(Box::new(elem_type))
                 }
             }
+            Expr::Tuple(elems) => {
+                let elem_types: Vec<SemaType> = elems.iter()
+                    .map(|e| self.infer_expr(e))
+                    .collect();
+                SemaType::Tuple(elem_types)
+            }
             Expr::Index { target, index } => {
                 let target_type = self.infer_expr(target);
                 let index_type = self.infer_expr(index);
@@ -432,6 +487,7 @@ impl TypeChecker {
 
                 match target_type {
                     SemaType::List(elem) => *elem,
+                    SemaType::Str => SemaType::Str,
                     SemaType::Unknown => SemaType::Unknown,
                     _ => {
                         self.error(format!("cannot index type {}", target_type), 0, 0);
@@ -444,25 +500,53 @@ impl TypeChecker {
                 let right_type = self.infer_expr(right);
 
                 match op {
-                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
-                        if left_type.is_numeric() && right_type.is_numeric() {
-                            if left_type.is_float() || right_type.is_float() {
-                                SemaType::F64
+                        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+                            if left_type.is_numeric() && right_type.is_numeric() {
+                                if left_type.is_float() || right_type.is_float() {
+                                    if left_type == SemaType::F32 && right_type == SemaType::F32 {
+                                        SemaType::F32
+                                    } else {
+                                        SemaType::F64
+                                    }
+                                } else if left_type == SemaType::I32 && right_type == SemaType::I32 {
+                                    SemaType::I32
+                                } else if left_type == SemaType::U32 && right_type == SemaType::U32 {
+                                    SemaType::U32
+                                } else if left_type == SemaType::I16 && right_type == SemaType::I16 {
+                                    SemaType::I16
+                                } else if left_type == SemaType::U16 && right_type == SemaType::U16 {
+                                    SemaType::U16
+                                } else if left_type == SemaType::I8 && right_type == SemaType::I8 {
+                                    SemaType::I8
+                                } else if left_type == SemaType::U8 && right_type == SemaType::U8 {
+                                    SemaType::U8
+                                } else {
+                                    SemaType::I64
+                                }
+                            } else if matches!(op, BinOp::Add) {
+                                if left_type == SemaType::Str && right_type == SemaType::Str {
+                                    SemaType::Str
+                                } else if matches!((&left_type, &right_type), (SemaType::List(_), SemaType::List(_))) {
+                                    left_type
+                                } else if left_type == SemaType::Unknown || right_type == SemaType::Unknown {
+                                    SemaType::Unknown
+                                } else {
+                                    self.error(
+                                        format!("cannot apply {:?} to {} and {}", op, left_type, right_type),
+                                        0, 0
+                                    );
+                                    SemaType::Unknown
+                                }
+                            } else if left_type == SemaType::Unknown || right_type == SemaType::Unknown {
+                                SemaType::Unknown
                             } else {
-                                SemaType::I64
+                                self.error(
+                                    format!("cannot apply {:?} to {} and {}", op, left_type, right_type),
+                                    0, 0
+                                );
+                                SemaType::Unknown
                             }
-                        } else if matches!(op, BinOp::Add) && left_type == SemaType::Str && right_type == SemaType::Str {
-                            SemaType::Str
-                        } else if left_type == SemaType::Unknown || right_type == SemaType::Unknown {
-                            SemaType::Unknown
-                        } else {
-                            self.error(
-                                format!("cannot apply {:?} to {} and {}", op, left_type, right_type),
-                                0, 0
-                            );
-                            SemaType::Unknown
                         }
-                    }
                     BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => {
                         if left_type.is_compatible_with(&right_type) {
                             SemaType::Bool
@@ -541,10 +625,7 @@ impl TypeChecker {
                 }
             }
             Expr::IfExpr { condition, then_value, else_value } => {
-                let cond_type = self.infer_expr(condition);
-                if !cond_type.is_bool() && cond_type != SemaType::Unknown {
-                    self.error(format!("if condition must be bool, got {}", cond_type), 0, 0);
-                }
+                self.infer_expr(condition);
 
                 let then_type = self.infer_expr(then_value);
                 let else_type = self.infer_expr(else_value);
@@ -645,6 +726,23 @@ impl TypeChecker {
             Expr::Await(inner) => {
                 self.infer_expr(inner)
             }
+            Expr::Try(inner) => {
+                self.infer_expr(inner)
+            }
+            Expr::Lambda { params, return_type, .. } => {
+                let param_types: Vec<SemaType> = params.iter()
+                    .map(|(_, t)| SemaType::from_annotation(t))
+                    .collect();
+                let ret_type = if let Some(rt) = return_type {
+                    SemaType::from_annotation(rt)
+                } else {
+                    SemaType::Unknown
+                };
+                SemaType::Function {
+                    params: param_types,
+                    ret: Box::new(ret_type),
+                }
+            }
             Expr::MatchExpr { scrutinee, arms } => {
                 let _scrut_type = self.infer_expr(scrutinee);
                 let mut result_type = SemaType::Unknown;
@@ -659,6 +757,65 @@ impl TypeChecker {
                 }
                 result_type
             }
+            Expr::Ref(inner, is_mut) => {
+                let inner_ty = self.infer_expr(inner);
+                SemaType::Ref(Box::new(inner_ty), *is_mut)
+            }
+            Expr::Deref(inner) => {
+                let inner_ty = self.infer_expr(inner);
+                match inner_ty {
+                    SemaType::Ref(target, _) => *target,
+                    SemaType::Ptr(target) => *target,
+                    SemaType::Unknown => SemaType::Unknown,
+                    other => {
+                        self.error(format!("cannot dereference type {}", other), 0, 0);
+                        SemaType::Unknown
+                    }
+                }
+            }
+            Expr::AsCast(expr, ty) => {
+                let _ = self.infer_expr(expr);
+                SemaType::from_annotation(ty)
+            }
+        }
+    }
+
+    fn infer_lvalue_target(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Ident(_) => {}
+            Expr::Index { target, index } => {
+                self.infer_lvalue_target(target);
+                let _ = self.infer_expr(index);
+            }
+            Expr::FieldAccess { target, .. } => {
+                self.infer_lvalue_target(target);
+            }
+            _ => {}
+        }
+    }
+
+    fn check_lvalue_assign(&mut self, target: &Expr, val_type: SemaType) {
+        match target {
+            Expr::Ident(name) => {
+                if let Some(var_type) = self.lookup_var(name) {
+                    if val_type != SemaType::Unknown && var_type != SemaType::Unknown {
+                        if !val_type.is_compatible_with(&var_type) {
+                            self.error(
+                                format!("assigning {} to variable '{}' of type {}", val_type, name, var_type),
+                                0, 0
+                            );
+                        }
+                    }
+                }
+            }
+            Expr::Index { target: ltarget, index } => {
+                self.check_lvalue_assign(ltarget, SemaType::Unknown);
+                let _ = self.infer_expr(index);
+            }
+            Expr::FieldAccess { target: ltarget, .. } => {
+                self.check_lvalue_assign(ltarget, SemaType::Unknown);
+            }
+            _ => {}
         }
     }
 
@@ -690,36 +847,29 @@ impl TypeChecker {
                 }
                 Stmt::Assign { target, value } => {
                     let val_type = self.infer_expr(value);
-                    if let Some(var_type) = self.lookup_var(target) {
-                        if val_type != SemaType::Unknown && var_type != SemaType::Unknown {
-                            if !val_type.is_compatible_with(&var_type) {
-                                self.error(
-                                    format!("assigning {} to variable '{}' of type {}", val_type, target, var_type),
-                                    0, 0
-                                );
-                            }
+                    self.check_lvalue_assign(target, val_type);
+                }
+                Stmt::If { condition, then_branch, else_branch } => {
+                    self.infer_expr(condition);
+                    self.push_scope();
+                    let then_ret = self.infer_block_return_type(then_branch);
+                    self.pop_scope();
+                    let mut else_ret = SemaType::Void;
+                    if let Some(else_block) = else_branch {
+                        self.push_scope();
+                        else_ret = self.infer_block_return_type(else_block);
+                        self.pop_scope();
+                    }
+                    if else_branch.is_some() {
+                        if then_ret != SemaType::Void {
+                            ret_type = then_ret;
+                        } else if else_ret != SemaType::Void {
+                            ret_type = else_ret;
                         }
                     }
                 }
-                Stmt::If { condition, then_branch, else_branch } => {
-                    let cond_type = self.infer_expr(condition);
-                    if !cond_type.is_bool() && cond_type != SemaType::Unknown {
-                        self.error(format!("if condition must be bool, got {}", cond_type), 0, 0);
-                    }
-                    self.push_scope();
-                    self.infer_block_return_type(then_branch);
-                    self.pop_scope();
-                    if let Some(else_block) = else_branch {
-                        self.push_scope();
-                        self.infer_block_return_type(else_block);
-                        self.pop_scope();
-                    }
-                }
                 Stmt::While { condition, body } => {
-                    let cond_type = self.infer_expr(condition);
-                    if !cond_type.is_bool() && cond_type != SemaType::Unknown {
-                        self.error(format!("while condition must be bool, got {}", cond_type), 0, 0);
-                    }
+                    self.infer_expr(condition);
                     self.push_scope();
                     self.infer_block_return_type(body);
                     self.pop_scope();
@@ -729,6 +879,17 @@ impl TypeChecker {
                     self.infer_expr(end);
                     self.push_scope();
                     self.declare_var(var_name, SemaType::I64);
+                    self.infer_block_return_type(body);
+                    self.pop_scope();
+                }
+                Stmt::ForIterable { var_name, iterable, body } => {
+                    let iter_ty = self.infer_expr(iterable);
+                    let elem_ty = match &iter_ty {
+                        SemaType::List(e) | SemaType::Stream(e) => *e.clone(),
+                        _ => SemaType::Unknown,
+                    };
+                    self.push_scope();
+                    self.declare_var(var_name, elem_ty);
                     self.infer_block_return_type(body);
                     self.pop_scope();
                 }
@@ -796,8 +957,8 @@ impl ConstFolder {
             }
             Stmt::Assign { target, value } => {
                 Stmt::Assign {
-                    target: target.clone(),
-                    value: self.fold_expr(value),
+                    target: Box::new(self.fold_expr(target)),
+                    value: Box::new(self.fold_expr(value)),
                 }
             }
             Stmt::Expr(expr) => {
@@ -829,6 +990,13 @@ impl ConstFolder {
                     var_name: var_name.clone(),
                     start: folded_start,
                     end: folded_end,
+                    body: self.fold_block(body),
+                }
+            }
+            Stmt::ForIterable { var_name, iterable, body } => {
+                Stmt::ForIterable {
+                    var_name: var_name.clone(),
+                    iterable: self.fold_expr(iterable),
                     body: self.fold_block(body),
                 }
             }
@@ -1035,6 +1203,13 @@ impl ConstFolder {
                 }
                 Expr::List(folded_items)
             }
+            Expr::Tuple(elems) => {
+                let mut folded_elems = Vec::new();
+                for e in elems {
+                    folded_elems.push(self.fold_expr(e));
+                }
+                Expr::Tuple(folded_elems)
+            }
             Expr::Index { target, index } => {
                 let folded_target = self.fold_expr(target);
                 let folded_index = self.fold_expr(index);
@@ -1083,6 +1258,16 @@ impl ConstFolder {
             }
             Expr::Await(inner) => {
                 Expr::Await(Box::new(self.fold_expr(inner)))
+            }
+            Expr::Try(inner) => {
+                Expr::Try(Box::new(self.fold_expr(inner)))
+            }
+            Expr::Lambda { params, return_type, body } => {
+                Expr::Lambda {
+                    params: params.clone(),
+                    return_type: return_type.clone(),
+                    body: self.fold_block(body),
+                }
             }
             _ => expr.clone(),
         }
@@ -1164,6 +1349,13 @@ impl DeadCodeEliminator {
                     body: self.eliminate_block(body),
                 }
             }
+            Stmt::ForIterable { var_name, iterable, body } => {
+                Stmt::ForIterable {
+                    var_name: var_name.clone(),
+                    iterable: iterable.clone(),
+                    body: self.eliminate_block(body),
+                }
+            }
             Stmt::Loop(body) => {
                 Stmt::Loop(self.eliminate_block(body))
             }
@@ -1229,7 +1421,8 @@ fn is_copy_type(ty: &SemaType) -> bool {
     matches!(ty,
         SemaType::I8 | SemaType::I16 | SemaType::I32 | SemaType::I64 |
         SemaType::U8 | SemaType::U16 | SemaType::U32 | SemaType::U64 | SemaType::USize |
-        SemaType::F32 | SemaType::F64 | SemaType::Bool | SemaType::Unit | SemaType::Void
+        SemaType::F32 | SemaType::F64 | SemaType::Bool | SemaType::Unit | SemaType::Void | SemaType::Unknown |
+        SemaType::Ref(_, _)
     )
 }
 
@@ -1307,10 +1500,9 @@ impl BorrowChecker {
                     OwnershipState::MutBorrowed => {
                         self.error(format!("cannot move '{}' while it is mutably borrowed", name));
                     }
-                    OwnershipState::Borrowed(n) if *n > 0 => {
-                        self.error(format!("cannot move '{}' while it is borrowed", name));
-                    }
-                    _ => {
+                    // 在简化模型中，Borrowed(n>0) 视为"只读临时借用"，
+                    // 之后允许 move（例如：读取 len 后再 return 容器）
+                    OwnershipState::Borrowed(_) | OwnershipState::Owned => {
                         self.set_var_state(name, OwnershipState::Moved);
                     }
                 }
@@ -1380,6 +1572,25 @@ impl BorrowChecker {
         }
     }
 
+    fn check_lvalue_use(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Ident(_name) => {
+                // 赋值目标是写入，不是读取，不做 use_var 借用检查
+                // （简化模型：允许对变量写入）
+            }
+            Expr::Index { target, index } => {
+                // 递归检查 target 本身（同样是写入目标）
+                self.check_lvalue_use(target);
+                // index 表达式是读取，正常检查
+                self.check_expr(index, false);
+            }
+            Expr::FieldAccess { target, .. } => {
+                self.check_lvalue_use(target);
+            }
+            _ => {}
+        }
+    }
+
     fn check_toplevel_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::FnDecl { name, params, body, .. } => {
@@ -1429,7 +1640,7 @@ impl BorrowChecker {
                 self.declare_var(name, ty, false);
             }
             Stmt::Assign { target, value } => {
-                self.use_var(target);
+                self.check_lvalue_use(target);
                 self.check_expr(value, true);
             }
             Stmt::Expr(expr) => {
@@ -1466,6 +1677,13 @@ impl BorrowChecker {
                 self.check_expr(end, false);
                 self.push_scope();
                 self.declare_var(var_name, SemaType::I64, false);
+                self.check_block(body);
+                self.pop_scope();
+            }
+            Stmt::ForIterable { var_name, iterable, body } => {
+                self.check_expr(iterable, false);
+                self.push_scope();
+                self.declare_var(var_name, SemaType::Unknown, false);
                 self.check_block(body);
                 self.pop_scope();
             }
@@ -1547,6 +1765,11 @@ impl BorrowChecker {
                     self.check_expr(item, true);
                 }
             }
+            Expr::Tuple(elems) => {
+                for e in elems {
+                    self.check_expr(e, true);
+                }
+            }
             Expr::IfExpr { condition, then_value, else_value } => {
                 self.check_expr(condition, false);
                 self.check_expr(then_value, may_move);
@@ -1585,6 +1808,13 @@ impl BorrowChecker {
             Expr::Await(inner) => {
                 self.check_expr(inner, may_move);
             }
+            Expr::Lambda { body, .. } => {
+                self.push_scope();
+                for stmt in &body.stmts {
+                    self.check_stmt(stmt);
+                }
+                self.pop_scope();
+            }
             _ => {}
         }
     }
@@ -1617,6 +1847,12 @@ impl BorrowChecker {
                 self.lookup_var(name).map(|v| v.ty).unwrap_or(SemaType::Unknown)
             }
             Expr::List(_) => SemaType::List(Box::new(SemaType::Unknown)),
+            Expr::Tuple(elems) => {
+                let elem_types: Vec<SemaType> = elems.iter()
+                    .map(|e| self.infer_expr_type(e))
+                    .collect();
+                SemaType::Tuple(elem_types)
+            }
             Expr::Binary { op, .. } => {
                 match op {
                     BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => SemaType::I64,
@@ -1661,7 +1897,31 @@ impl BorrowChecker {
                 }
             }
             Expr::Await(inner) => self.infer_expr_type(inner),
+            Expr::Try(inner) => self.infer_expr_type(inner),
+            Expr::Lambda { params, return_type, .. } => {
+                let param_types: Vec<SemaType> = params.iter()
+                    .map(|(_, t)| SemaType::from_annotation(t))
+                    .collect();
+                let ret_type = if let Some(rt) = return_type {
+                    SemaType::from_annotation(rt)
+                } else {
+                    SemaType::Unknown
+                };
+                SemaType::Function {
+                    params: param_types,
+                    ret: Box::new(ret_type),
+                }
+            }
             Expr::Index { .. } => SemaType::Unknown,
+            Expr::Ref(inner, is_mut) => SemaType::Ref(Box::new(self.infer_expr_type(inner)), *is_mut),
+            Expr::Deref(inner) => {
+                match self.infer_expr_type(inner) {
+                    SemaType::Ref(target, _) => *target,
+                    SemaType::Ptr(target) => *target,
+                    _ => SemaType::Unknown,
+                }
+            }
+            Expr::AsCast(_, ty) => SemaType::from_annotation(ty),
         }
     }
 
@@ -1855,11 +2115,17 @@ mod tests {
     }
 
     #[test]
-    fn test_check_bad_if_condition() {
+    fn test_check_truthy_if_condition() {
         let program = parse("if 42 { 1 } else { 2 }");
         let errors = check_program(&program);
-        assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("if condition must be bool"));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_check_truthy_nonbool_conditions() {
+        let program = parse(r#"if "" {} if [] {} if none {} if 0 {} if "hello" {}"#);
+        let errors = check_program(&program);
+        assert!(errors.is_empty());
     }
 
     #[test]

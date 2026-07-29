@@ -42,6 +42,16 @@ impl TypeMapper for CGenerator {
                 // 这里仅给出提示性类型
                 format!("/* stream<{}> */ void*", self.map_type(inner))
             }
+            TypeAnnotation::Ref(inner, _) => self.map_type(inner),
+            TypeAnnotation::Generic(base, _) => self.map_type(base),
+            TypeAnnotation::Array(elem, _) => format!("{}*", self.map_type(elem)),
+            TypeAnnotation::Tuple(elems) => {
+                let fields: Vec<String> = elems.iter()
+                    .enumerate()
+                    .map(|(i, e)| format!("{} f{}", self.map_type(e), i))
+                    .collect();
+                format!("struct {{ {} }}/*tuple*/", fields.join("; "))
+            }
         }
     }
 }

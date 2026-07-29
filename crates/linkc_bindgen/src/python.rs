@@ -33,6 +33,19 @@ impl TypeMapper for PythonGenerator {
             TypeAnnotation::Ptr(_) => "int".to_string(),  // 指针地址
             TypeAnnotation::Named(s) => s.clone(),
             TypeAnnotation::Stream(inner) => format!("AsyncIterable[{}]", self.map_type(inner)),
+            TypeAnnotation::Ref(inner, _) => self.map_type(inner),
+            TypeAnnotation::Generic(base, _) => self.map_type(base),
+            TypeAnnotation::Array(elem, _) => format!("list[{}]", self.map_type(elem)),
+            TypeAnnotation::Tuple(elems) => {
+                if elems.is_empty() {
+                    "tuple".to_string()
+                } else {
+                    let parts: Vec<String> = elems.iter()
+                        .map(|e| self.map_type(e))
+                        .collect();
+                    format!("tuple[{}]", parts.join(", "))
+                }
+            }
         }
     }
 }

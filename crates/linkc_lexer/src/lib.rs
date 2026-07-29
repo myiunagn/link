@@ -281,6 +281,32 @@ impl Lexer {
                 break;
             }
         }
+        if let Some(ch) = self.peek() {
+            if ch == 'e' || ch == 'E' {
+                is_float = true;
+                num_str.push(ch);
+                self.advance();
+                if let Some(sign) = self.peek() {
+                    if sign == '+' || sign == '-' {
+                        num_str.push(sign);
+                        self.advance();
+                    }
+                }
+                let mut found_exp_digit = false;
+                while let Some(d) = self.peek() {
+                    if d.is_ascii_digit() {
+                        num_str.push(d);
+                        self.advance();
+                        found_exp_digit = true;
+                    } else {
+                        break;
+                    }
+                }
+                if !found_exp_digit {
+                    panic!("Invalid float literal: missing exponent digits");
+                }
+            }
+        }
         if is_float {
             Token::Float(num_str.parse().expect("Invalid float literal"))
         } else {

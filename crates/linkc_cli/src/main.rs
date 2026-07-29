@@ -50,7 +50,7 @@ fn main() {
             process::exit(1);
         }
     } else if command == "--version" || command == "-V" {
-        println!("linkc 0.1.0");
+        println!("linkc 0.2.0");
     } else if command == "--help" || command == "-h" {
         print_help();
     } else {
@@ -547,7 +547,7 @@ fn run_file(filename: &str) -> Result<(), String> {
 
     let mut env = linkc_interpreter::Environment::new();
     let mut ctx = linkc_interpreter::InterpContext::new();
-    let _ = linkc_interpreter::eval_program(&program, &mut env, &mut ctx)?;
+    let program_result = linkc_interpreter::eval_program(&program, &mut env, &mut ctx)?;
 
     // 自动调用 main 函数(如果存在)
     let result = match env.get("main") {
@@ -556,7 +556,7 @@ fn run_file(filename: &str) -> Result<(), String> {
             linkc_interpreter::eval_block(&body.stmts, &mut main_env, &mut ctx)?
         }
         Ok(other) => other,
-        Err(_) => linkc_interpreter::Value::None,
+        Err(_) => program_result,
     };
 
     match result {
@@ -577,6 +577,7 @@ fn run_file(filename: &str) -> Result<(), String> {
         linkc_interpreter::Value::JavaFunction { name, .. } => println!("<java fn {}>", name),
         linkc_interpreter::Value::HtmlFunction { name, .. } => println!("<html fn {}>", name),
         linkc_interpreter::Value::ProcessFunction { name, language, .. } => println!("<{} fn {}>", language, name),
+        linkc_interpreter::Value::Tuple(_) => { print_value(&result); println!(); }
     }
     Ok(())
 }
@@ -631,6 +632,14 @@ fn print_value(val: &linkc_interpreter::Value) {
                 }
                 print!(")");
             }
+        }
+        linkc_interpreter::Value::Tuple(elems) => {
+            print!("(");
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 { print!(", "); }
+                print_value(e);
+            }
+            print!(")");
         }
     }
 }

@@ -79,6 +79,8 @@ pub enum Value {
         variant: String,
         payload: Vec<Value>,
     },
+    /// 元组值
+    Tuple(Vec<Value>),
 }
 
 impl PartialEq for Value {
@@ -105,6 +107,7 @@ impl PartialEq for Value {
              Value::EnumValue { type_name: t2, variant: v2, payload: p2 }) => {
                 t1 == t2 && v1 == v2 && p1 == p2
             }
+            (Value::Tuple(a), Value::Tuple(b)) => a == b,
             _ => false,
         }
     }
@@ -130,6 +133,7 @@ impl Value {
             Value::Stream(_) => "stream",
             Value::StructInstance { type_name, .. } => type_name,
             Value::EnumValue { type_name, .. } => type_name,
+            Value::Tuple(_) => "tuple",
         }
     }
 
@@ -168,6 +172,7 @@ impl Value {
             Value::None => false,
             Value::List(items) => !items.is_empty(),
             Value::Str(s) => !s.is_empty(),
+            Value::Tuple(elems) => !elems.is_empty(),
             _ => true,
         }
     }
@@ -295,6 +300,158 @@ pub fn eval_block(stmts: &[Stmt], env: &mut Environment, ctx: &mut InterpContext
     Ok(last)
 }
 
+fn assign_lvalue(
+    target: &Expr,
+    value: Value,
+    env: &mut Environment,
+    ctx: &mut InterpContext,
+) -> Result<(), String> {
+    match target {
+        Expr::Ident(name) => {
+            env.assign(name.clone(), value)?;
+        }
+        Expr::Deref(inner) => {
+            let root_name = extract_root_var(inner)?;
+            env.assign(root_name, value)?;
+        }
+        Expr::Index { target: ltarget, index } => {
+            let root_name = extract_root_var(ltarget)?;
+            let root_val = env.get(&root_name)
+                .map_err(|_| format!("Undefined variable: {}", root_name))?;
+            let idx_val = eval_expr(index, env, ctx)?;
+            let idx = match idx_val {
+                Value::Int(i) => i as usize,
+                _ => return Err("list index must be integer".to_string()),
+            };
+            let new_root = set_indexed(root_val, ltarget, idx, value, env, ctx)?;
+            env.assign(root_name, new_root)?;
+        }
+        Expr::FieldAccess { target: ltarget, field } => {
+            let root_name = extract_root_var(ltarget)?;
+            let root_val = env.get(&root_name)
+                .map_err(|_| format!("Undefined variable: {}", root_name))?;
+            let new_root = set_field(root_val, ltarget, field.clone(), value)?;
+            env.assign(root_name, new_root)?;
+        }
+        _ => return Err(format!("Invalid assignment target: {:?}", target)),
+    }
+    Ok(())
+}
+
+fn extract_root_var(expr: &Expr) -> Result<String, String> {
+    match expr {
+        Expr::Ident(name) => Ok(name.clone()),
+        Expr::Index { target, .. } => extract_root_var(target),
+        Expr::FieldAccess { target, .. } => extract_root_var(target),
+        Expr::Deref(inner) => extract_root_var(inner),
+        _ => Err(format!("Cannot extract root variable from {:?}", expr)),
+    }
+}
+
+fn set_indexed(
+    container: Value,
+    ltarget: &Expr,
+    final_idx: usize,
+    value: Value,
+    env: &mut Environment,
+    ctx: &mut InterpContext,
+) -> Result<Value, String> {
+    match ltarget {
+        Expr::Ident(_) => {
+            match container {
+                Value::List(mut vec) => {
+                    if final_idx >= vec.len() {
+                        return Err(format!("Index out of bounds: {} >= {}", final_idx, vec.len()));
+                    }
+                    vec[final_idx] = value;
+                    Ok(Value::List(vec))
+                }
+                Value::Str(s) => {
+                    let chars: Vec<char> = s.chars().collect();
+                    if final_idx >= chars.len() {
+                        return Err(format!("Index out of bounds: {} >= {}", final_idx, chars.len()));
+                    }
+                    let new_char = match value {
+                        Value::Str(s2) if s2.chars().count() == 1 => s2.chars().next().unwrap(),
+                        _ => return Err("Assignment to string index requires single-char string".to_string()),
+                    };
+                    let mut new_chars = chars;
+                    new_chars[final_idx] = new_char;
+                    Ok(Value::Str(new_chars.into_iter().collect()))
+                }
+                other => Err(format!("Cannot index into {:?}", other)),
+            }
+        }
+        Expr::Index { target: inner_target, index: inner_index } => {
+            let inner_idx_val = eval_expr(inner_index, env, ctx)?;
+            let inner_idx = match inner_idx_val {
+                Value::Int(i) => i as usize,
+                _ => return Err("list index must be integer".to_string()),
+            };
+            match container {
+                Value::List(mut vec) => {
+                    if inner_idx >= vec.len() {
+                        return Err(format!("Index out of bounds: {} >= {}", inner_idx, vec.len()));
+                    }
+                    let inner = std::mem::replace(&mut vec[inner_idx], Value::None);
+                    let new_inner = set_indexed(inner, inner_target, final_idx, value, env, ctx)?;
+                    vec[inner_idx] = new_inner;
+                    Ok(Value::List(vec))
+                }
+                other => Err(format!("Cannot index into {:?}", other)),
+            }
+        }
+        Expr::FieldAccess { target: inner_target, field: inner_field } => {
+            match container {
+                Value::StructInstance { type_name, mut fields } => {
+                    let inner = fields.remove(inner_field)
+                        .ok_or_else(|| format!("Unknown field: {}", inner_field))?;
+                    let new_inner = set_indexed(inner, inner_target, final_idx, value, env, ctx)?;
+                    fields.insert(inner_field.clone(), new_inner);
+                    Ok(Value::StructInstance { type_name, fields })
+                }
+                other => Err(format!("Cannot access field on {:?}", other)),
+            }
+        }
+        _ => Err(format!("Invalid lvalue chain: {:?}", ltarget)),
+    }
+}
+
+fn set_field(
+    container: Value,
+    ltarget: &Expr,
+    final_field: String,
+    value: Value,
+) -> Result<Value, String> {
+    match ltarget {
+        Expr::Ident(_) => {
+            match container {
+                Value::StructInstance { type_name, mut fields } => {
+                    fields.insert(final_field, value);
+                    Ok(Value::StructInstance { type_name, fields })
+                }
+                other => Err(format!("Cannot set field on {:?}", other)),
+            }
+        }
+        Expr::Index { target: inner_target, index: inner_index } => {
+            Err("set_field for Index not supported in this simplified impl".to_string().into())
+        }
+        Expr::FieldAccess { target: inner_target, field: inner_field } => {
+            match container {
+                Value::StructInstance { type_name, mut fields } => {
+                    let inner = fields.remove(inner_field)
+                        .ok_or_else(|| format!("Unknown field: {}", inner_field))?;
+                    let new_inner = set_field(inner, inner_target, final_field, value)?;
+                    fields.insert(inner_field.clone(), new_inner);
+                    Ok(Value::StructInstance { type_name, fields })
+                }
+                other => Err(format!("Cannot access field on {:?}", other)),
+            }
+        }
+        _ => Err(format!("Invalid lvalue chain for field: {:?}", ltarget)),
+    }
+}
+
 fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Result<Value, String> {
     match stmt {
         Stmt::Expr(expr) => eval_expr(expr, env, ctx),
@@ -308,7 +465,7 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
         }
         Stmt::Assign { target, value } => {
             let val = eval_expr(value, env, ctx)?;
-            env.assign(target.clone(), val)?;
+            assign_lvalue(target, val, env, ctx)?;
             Ok(Value::None)
         }
         Stmt::FnDecl { name, params, body, .. } => {
@@ -346,6 +503,8 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
                 if !cond.is_truthy() { break; }
                 match eval_block(&body.stmts, env, ctx) {
                     Ok(_) => continue,
+                    Err(e) if e == "__break__" => break,
+                    Err(e) if e == "__continue__" => continue,
                     Err(e) if e.starts_with("__return__") => return Err(e),
                     Err(e) => return Err(e),
                 }
@@ -359,6 +518,28 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
                 env.set(var_name.clone(), Value::Int(i));
                 match eval_block(&body.stmts, env, ctx) {
                     Ok(_) => continue,
+                    Err(e) if e == "__break__" => break,
+                    Err(e) if e == "__continue__" => continue,
+                    Err(e) if e.starts_with("__return__") => return Err(e),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(Value::None)
+        }
+        Stmt::ForIterable { var_name, iterable, body } => {
+            let iter_val = eval_expr(iterable, env, ctx)?;
+            let items: Vec<Value> = match iter_val {
+                Value::List(v) => v,
+                Value::Stream(v) => v,
+                Value::Str(s) => s.chars().map(|c| Value::Str(c.to_string())).collect(),
+                other => return Err(format!("cannot iterate over type: {:?}", other)),
+            };
+            for item in items {
+                env.set(var_name.clone(), item);
+                match eval_block(&body.stmts, env, ctx) {
+                    Ok(_) => continue,
+                    Err(e) if e == "__break__" => break,
+                    Err(e) if e == "__continue__" => continue,
                     Err(e) if e.starts_with("__return__") => return Err(e),
                     Err(e) => return Err(e),
                 }
@@ -370,6 +551,7 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
                 match eval_block(&body.stmts, env, ctx) {
                     Ok(_) => continue,
                     Err(e) if e == "__break__" => break,
+                    Err(e) if e == "__continue__" => continue,
                     Err(e) if e.starts_with("__return__") => return Err(e),
                     Err(e) => return Err(e),
                 }
@@ -377,7 +559,7 @@ fn eval_stmt(stmt: &Stmt, env: &mut Environment, ctx: &mut InterpContext) -> Res
             Ok(Value::None)
         }
         Stmt::Break => Err("__break__".to_string()),
-        Stmt::Continue => Ok(Value::None),
+        Stmt::Continue => Err("__continue__".to_string()),
         Stmt::ExternDecl { language, module, decls } => {
             eval_extern_decl(language, module.as_deref(), decls, env, ctx)
         }
@@ -505,7 +687,20 @@ fn try_match_pattern(pattern: &Pattern, val: &Value, env: &mut Environment) -> R
             match val {
                 Value::EnumValue { type_name: tn, variant: v, payload } => {
                     if payload.is_empty() {
-                        Ok(tn == type_name && v == variant)
+                        let type_match = type_name.is_empty() || tn == type_name
+                            || (type_name == "Ok" && tn == "Result")
+                            || (type_name == "Err" && tn == "Result")
+                            || (type_name == "Some" && tn == "Option")
+                            || (type_name == "None" && tn == "Option")
+                            || (variant == "Ok" && tn == "Result" && type_name == "Result")
+                            || (variant == "Err" && tn == "Result" && type_name == "Result")
+                            || (variant == "Some" && tn == "Option" && type_name == "Option");
+                        let variant_match = v == variant
+                            || ((variant == "Ok" || variant == "ok") && (v == "Ok" || v == "ok"))
+                            || ((variant == "Err" || variant == "err") && (v == "Err" || v == "err"))
+                            || ((variant == "Some" || variant == "some") && (v == "Some" || v == "some"))
+                            || ((variant == "None" || variant == "none") && (v == "None" || v == "none"));
+                        Ok(type_match && variant_match)
                     } else {
                         Ok(false)
                     }
@@ -516,7 +711,18 @@ fn try_match_pattern(pattern: &Pattern, val: &Value, env: &mut Environment) -> R
         Pattern::EnumVariantWithPayload { type_name, variant, bindings } => {
             match val {
                 Value::EnumValue { type_name: tn, variant: v, payload } => {
-                    if tn == type_name && v == variant && payload.len() == bindings.len() {
+                    let type_match = type_name.is_empty() || tn == type_name
+                        || (variant == "Ok" && tn == "Result")
+                        || (variant == "Err" && tn == "Result")
+                        || (variant == "Some" && tn == "Option")
+                        || (variant == "ok" && tn == "Result")
+                        || (variant == "err" && tn == "Result")
+                        || (variant == "some" && tn == "Option");
+                    let variant_match = v == variant
+                        || ((variant == "Ok" || variant == "ok") && (v == "Ok" || v == "ok"))
+                        || ((variant == "Err" || variant == "err") && (v == "Err" || v == "err"))
+                        || ((variant == "Some" || variant == "some") && (v == "Some" || v == "some"));
+                    if type_match && variant_match && payload.len() == bindings.len() {
                         for (binding, value) in bindings.iter().zip(payload.iter()) {
                             if binding != "_" {
                                 env.set(binding.clone(), value.clone());
@@ -570,6 +776,10 @@ fn value_to_string(val: &Value) -> String {
                 format!("{}::{}({})", type_name, variant, parts.join(", "))
             }
         }
+        Value::Tuple(elems) => {
+            let parts: Vec<String> = elems.iter().map(value_to_string).collect();
+            format!("({})", parts.join(", "))
+        }
     }
 }
 
@@ -588,6 +798,13 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
             }
             Ok(Value::List(values))
         }
+        Expr::Tuple(elems) => {
+            let mut values = Vec::new();
+            for e in elems {
+                values.push(eval_expr(e, env, ctx)?);
+            }
+            Ok(Value::Tuple(values))
+        }
         Expr::Index { target, index } => {
             let target_val = eval_expr(target, env, ctx)?;
             let index_val = eval_expr(index, env, ctx)?;
@@ -599,10 +816,11 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
                     Ok(items[i as usize].clone())
                 }
                 (Value::Str(s), Value::Int(i)) => {
-                    if i < 0 || i >= s.len() as i64 {
-                        return Err(format!("Index {} out of bounds for string of length {}", i, s.len()));
+                    let char_count = s.chars().count() as i64;
+                    if i < 0 || i >= char_count {
+                        return Err(format!("Index {} out of bounds for string of length {} (chars)", i, char_count));
                     }
-                    let c = s.chars().nth(i as usize).unwrap();
+                    let c = s.chars().nth(i as usize).ok_or_else(|| format!("String index {} invalid (char count: {})", i, char_count))?;
                     Ok(Value::Str(c.to_string()))
                 }
                 (v, _) => Err(format!("Cannot index into type {}", v.type_name())),
@@ -611,6 +829,22 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
         Expr::Binary { op, left, right } => {
             if *op == BinOp::Pipe {
                 eval_pipe_expr(left, right, env, ctx)
+            } else if *op == BinOp::And {
+                let left_val = eval_expr(left, env, ctx)?;
+                if !left_val.as_bool()? {
+                    Ok(Value::Bool(false))
+                } else {
+                    let right_val = eval_expr(right, env, ctx)?;
+                    Ok(Value::Bool(right_val.as_bool()?))
+                }
+            } else if *op == BinOp::Or {
+                let left_val = eval_expr(left, env, ctx)?;
+                if left_val.as_bool()? {
+                    Ok(Value::Bool(true))
+                } else {
+                    let right_val = eval_expr(right, env, ctx)?;
+                    Ok(Value::Bool(right_val.as_bool()?))
+                }
             } else {
                 let left_val = eval_expr(left, env, ctx)?;
                 let right_val = eval_expr(right, env, ctx)?;
@@ -649,7 +883,6 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
         Expr::Path { base, segment } => {
             // 检查是否是已注册的 enum 类型
             if ctx.enum_defs.contains_key(base) {
-                // 验证变体存在且无参数
                 let variants = ctx.enum_defs.get(base).unwrap();
                 let found = variants.iter().find(|v| v.name == *segment && v.payload.is_empty());
                 if found.is_none() {
@@ -659,6 +892,24 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
                     type_name: base.clone(),
                     variant: segment.clone(),
                     payload: Vec::new(),
+                })
+            } else if base == "Option" && segment == "None" {
+                Ok(Value::EnumValue {
+                    type_name: "Option".to_string(),
+                    variant: "None".to_string(),
+                    payload: Vec::new(),
+                })
+            } else if base == "Result" && segment == "Ok" {
+                Ok(Value::EnumValue {
+                    type_name: "Result".to_string(),
+                    variant: "Ok".to_string(),
+                    payload: vec![Value::None],
+                })
+            } else if base == "Result" && segment == "Err" {
+                Ok(Value::EnumValue {
+                    type_name: "Result".to_string(),
+                    variant: "Err".to_string(),
+                    payload: vec![Value::None],
                 })
             } else {
                 Err(format!("Unknown type or path: {}::{}", base, segment))
@@ -712,6 +963,37 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
                     variant: segment.clone(),
                     payload,
                 })
+            } else if base == "Vec" && segment == "new" {
+                Ok(Value::List(Vec::new()))
+            } else if base == "Map" && segment == "new" {
+                Ok(Value::List(Vec::new()))
+            } else if base == "Option" && segment == "Some" {
+                if args.len() != 1 {
+                    return Err(format!("Option::Some expects 1 arg, got {}", args.len()));
+                }
+                Ok(Value::EnumValue {
+                    type_name: "Option".to_string(),
+                    variant: "Some".to_string(),
+                    payload: vec![eval_expr(&args[0], env, ctx)?],
+                })
+            } else if base == "Result" && segment == "Ok" {
+                if args.len() != 1 {
+                    return Err(format!("Result::Ok expects 1 arg, got {}", args.len()));
+                }
+                Ok(Value::EnumValue {
+                    type_name: "Result".to_string(),
+                    variant: "Ok".to_string(),
+                    payload: vec![eval_expr(&args[0], env, ctx)?],
+                })
+            } else if base == "Result" && segment == "Err" {
+                if args.len() != 1 {
+                    return Err(format!("Result::Err expects 1 arg, got {}", args.len()));
+                }
+                Ok(Value::EnumValue {
+                    type_name: "Result".to_string(),
+                    variant: "Err".to_string(),
+                    payload: vec![eval_expr(&args[0], env, ctx)?],
+                })
             } else {
                 Err(format!("Unknown type or path: {}::{}", base, segment))
             }
@@ -724,6 +1006,31 @@ fn eval_expr(expr: &Expr, env: &mut Environment, ctx: &mut InterpContext) -> Res
             // v0.1 树漫游解释器:await 直接求值内部表达式(阻塞语义)
             // 真正的 async/await 并发调度留待 v0.2 LLVM 后端 + Tokio-like 运行时
             eval_expr(inner, env, ctx)
+        }
+        Expr::Try(inner) => {
+            // v0.1 简化:try! 直接返回内部值（语义上先留空）
+            eval_expr(inner, env, ctx)
+        }
+        Expr::Lambda { params, body, .. } => {
+            // 匿名函数:创建闭包值,捕获当前环境
+            Ok(Value::Function {
+                name: String::new(),
+                params: params.clone(),
+                body: body.clone(),
+                closure: env.clone(),
+            })
+        }
+        Expr::Ref(inner, _) => eval_expr(inner, env, ctx),
+        Expr::Deref(inner) => eval_expr(inner, env, ctx),
+        Expr::AsCast(expr, ty) => {
+            let val = eval_expr(expr, env, ctx)?;
+            match ty {
+                TypeAnnotation::F32 | TypeAnnotation::F64 => Ok(Value::Float(val.as_float().unwrap_or(0.0))),
+                TypeAnnotation::I8 | TypeAnnotation::I16 | TypeAnnotation::I32 | TypeAnnotation::I64
+                | TypeAnnotation::U8 | TypeAnnotation::U16 | TypeAnnotation::U32 | TypeAnnotation::U64
+                | TypeAnnotation::USize => Ok(Value::Int(val.as_int().unwrap_or(0))),
+                _ => Ok(val),
+            }
         }
     }
 }
@@ -768,12 +1075,42 @@ fn eval_binary_op(op: &BinOp, left: &Value, right: &Value) -> Result<Value, Stri
             }
         }
         BinOp::Mod => {
-            let r = right.as_int()?;
-            if r == 0 { return Err("Modulo by zero".to_string()); }
-            Ok(Value::Int(left.as_int()? % r))
+            if left.type_name() == "int" && right.type_name() == "int" {
+                let r = right.as_int()?;
+                if r == 0 { return Err("Modulo by zero".to_string()); }
+                Ok(Value::Int(left.as_int()? % r))
+            } else {
+                let r = right.as_float()?;
+                if r == 0.0 { return Err("Modulo by zero".to_string()); }
+                Ok(Value::Float(left.as_float()? % r))
+            }
         }
-        BinOp::Eq => Ok(Value::Bool(left == right)),
-        BinOp::Neq => Ok(Value::Bool(left != right)),
+        BinOp::Eq => {
+            if left.type_name() == right.type_name() {
+                Ok(Value::Bool(left == right))
+            } else {
+                let lf = left.as_float();
+                let rf = right.as_float();
+                if let (Ok(l), Ok(r)) = (lf, rf) {
+                    Ok(Value::Bool(l == r))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+        }
+        BinOp::Neq => {
+            if left.type_name() == right.type_name() {
+                Ok(Value::Bool(left != right))
+            } else {
+                let lf = left.as_float();
+                let rf = right.as_float();
+                if let (Ok(l), Ok(r)) = (lf, rf) {
+                    Ok(Value::Bool(l != r))
+                } else {
+                    Ok(Value::Bool(true))
+                }
+            }
+        }
         BinOp::Lt => Ok(Value::Bool(cmp_values(left, right)? < 0)),
         BinOp::Gt => Ok(Value::Bool(cmp_values(left, right)? > 0)),
         BinOp::LtEq => Ok(Value::Bool(cmp_values(left, right)? <= 0)),
@@ -1212,16 +1549,56 @@ fn call_extern_function(
             }
             // fn(T) -> T  常见: abs(i32) -> i32, sqrt(f64) -> f64
             (1, TypeAnnotation::I32) => {
-                let sym: Symbol<extern "C" fn(i32) -> i32> = lib.get(name.as_bytes())
-                    .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
-                let arg = args[0].as_int()? as i32;
-                Ok(Value::Int(sym(arg) as i64))
+                match &signature.params[0].1 {
+                    TypeAnnotation::I32 | TypeAnnotation::U32 | TypeAnnotation::I16 | TypeAnnotation::U16
+                    | TypeAnnotation::I8 | TypeAnnotation::U8 | TypeAnnotation::I64 | TypeAnnotation::U64
+                    | TypeAnnotation::USize => {
+                        let sym: Symbol<extern "C" fn(i32) -> i32> = lib.get(name.as_bytes())
+                            .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
+                        let arg = args[0].as_int()? as i32;
+                        Ok(Value::Int(sym(arg) as i64))
+                    }
+                    TypeAnnotation::Str => {
+                        let sym: Symbol<extern "C" fn(*const c_char) -> i32> = lib.get(name.as_bytes())
+                            .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
+                        let s = CString::new(args[0].as_string()?)
+                            .map_err(|e| format!("Invalid string argument: {}", e))?;
+                        Ok(Value::Int(sym(s.as_ptr()) as i64))
+                    }
+                    TypeAnnotation::F64 | TypeAnnotation::F32 => {
+                        let sym: Symbol<extern "C" fn(f64) -> i32> = lib.get(name.as_bytes())
+                            .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
+                        let arg = args[0].as_float()?;
+                        Ok(Value::Int(sym(arg) as i64))
+                    }
+                    TypeAnnotation::Bool => {
+                        let sym: Symbol<extern "C" fn(bool) -> i32> = lib.get(name.as_bytes())
+                            .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
+                        let arg = args[0].as_bool()?;
+                        Ok(Value::Int(sym(arg) as i64))
+                    }
+                    pt => Err(format!("Unsupported param type {:?} for 1-arg extern {} returning i32", pt, name)),
+                }
             }
             (1, TypeAnnotation::I64) => {
-                let sym: Symbol<extern "C" fn(i64) -> i64> = lib.get(name.as_bytes())
-                    .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
-                let arg = args[0].as_int()?;
-                Ok(Value::Int(sym(arg)))
+                match &signature.params[0].1 {
+                    TypeAnnotation::I32 | TypeAnnotation::U32 | TypeAnnotation::I16 | TypeAnnotation::U16
+                    | TypeAnnotation::I8 | TypeAnnotation::U8 | TypeAnnotation::I64 | TypeAnnotation::U64
+                    | TypeAnnotation::USize => {
+                        let sym: Symbol<extern "C" fn(i64) -> i64> = lib.get(name.as_bytes())
+                            .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
+                        let arg = args[0].as_int()?;
+                        Ok(Value::Int(sym(arg)))
+                    }
+                    TypeAnnotation::Str => {
+                        let sym: Symbol<extern "C" fn(*const c_char) -> i64> = lib.get(name.as_bytes())
+                            .map_err(|e| format!("Symbol '{}' not found: {}", name, e))?;
+                        let s = CString::new(args[0].as_string()?)
+                            .map_err(|e| format!("Invalid string argument: {}", e))?;
+                        Ok(Value::Int(sym(s.as_ptr())))
+                    }
+                    pt => Err(format!("Unsupported param type {:?} for 1-arg extern {} returning i64", pt, name)),
+                }
             }
             (1, TypeAnnotation::F64) => {
                 let sym: Symbol<extern "C" fn(f64) -> f64> = lib.get(name.as_bytes())
@@ -1440,6 +1817,9 @@ fn register_builtins(env: &mut Environment) {
     env.set("time_now".to_string(), Value::NativeFunction { name: "time_now".to_string(), arity: Some(0), func: builtin_time_now });
     env.set("time_now_ms".to_string(), Value::NativeFunction { name: "time_now_ms".to_string(), arity: Some(0), func: builtin_time_now_ms });
 
+    // ===== 标准库: 环境/路径 =====
+    env.set("getcwd".to_string(), Value::NativeFunction { name: "getcwd".to_string(), arity: Some(0), func: builtin_getcwd });
+
     // ===== 标准库: 类型转换 =====
     env.set("int".to_string(), Value::NativeFunction { name: "int".to_string(), arity: Some(1), func: builtin_int });
     env.set("float".to_string(), Value::NativeFunction { name: "float".to_string(), arity: Some(1), func: builtin_float });
@@ -1454,6 +1834,44 @@ fn register_builtins(env: &mut Environment) {
     env.set("list_contains".to_string(), Value::NativeFunction { name: "list_contains".to_string(), arity: Some(2), func: builtin_list_contains });
     env.set("list_reverse".to_string(), Value::NativeFunction { name: "list_reverse".to_string(), arity: Some(1), func: builtin_list_reverse });
     env.set("list_sort".to_string(), Value::NativeFunction { name: "list_sort".to_string(), arity: Some(1), func: builtin_list_sort });
+
+    // ===== 标准库: Option / Result 构造函数 =====
+    env.set("some".to_string(), Value::NativeFunction {
+        name: "some".to_string(),
+        arity: Some(1),
+        func: |args: &[Value]| -> Result<Value, String> {
+            if args.len() != 1 { return Err(format!("some expects 1 arg, got {}", args.len())); }
+            Ok(Value::EnumValue {
+                type_name: "Option".to_string(),
+                variant: "Some".to_string(),
+                payload: vec![args[0].clone()],
+            })
+        },
+    });
+    env.set("ok".to_string(), Value::NativeFunction {
+        name: "ok".to_string(),
+        arity: Some(1),
+        func: |args: &[Value]| -> Result<Value, String> {
+            if args.len() != 1 { return Err(format!("ok expects 1 arg, got {}", args.len())); }
+            Ok(Value::EnumValue {
+                type_name: "Result".to_string(),
+                variant: "Ok".to_string(),
+                payload: vec![args[0].clone()],
+            })
+        },
+    });
+    env.set("err".to_string(), Value::NativeFunction {
+        name: "err".to_string(),
+        arity: Some(1),
+        func: |args: &[Value]| -> Result<Value, String> {
+            if args.len() != 1 { return Err(format!("err expects 1 arg, got {}", args.len())); }
+            Ok(Value::EnumValue {
+                type_name: "Result".to_string(),
+                variant: "Err".to_string(),
+                payload: vec![args[0].clone()],
+            })
+        },
+    });
 }
 
 /// sleep(ms) —— 异步原语:阻塞当前线程 ms 毫秒
@@ -1465,6 +1883,16 @@ fn builtin_sleep(args: &[Value]) -> Result<Value, String> {
     let ms = args[0].as_int()?;
     std::thread::sleep(std::time::Duration::from_millis(ms as u64));
     Ok(Value::None)
+}
+
+/// getcwd() —— 获取当前工作目录(绝对路径字符串)
+fn builtin_getcwd(args: &[Value]) -> Result<Value, String> {
+    if !args.is_empty() {
+        return Err(format!("getcwd expects 0 arg, got {}", args.len()));
+    }
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("getcwd failed: {}", e))?;
+    Ok(Value::Str(cwd.to_string_lossy().to_string()))
 }
 
 // ===== 标准库: 数学函数实现 =====
@@ -1885,13 +2313,23 @@ fn print_value(val: &Value) {
                 print!(")");
             }
         }
+        Value::Tuple(elems) => {
+            print!("(");
+            for (i, e) in elems.iter().enumerate() {
+                if i > 0 { print!(", "); }
+                print_value(e);
+            }
+            print!(")");
+        }
     }
 }
 
 fn builtin_len(args: &[Value]) -> Result<Value, String> {
     match &args[0] {
-        Value::Str(s) => Ok(Value::Int(s.len() as i64)),
+        Value::Str(s) => Ok(Value::Int(s.chars().count() as i64)),
         Value::List(items) => Ok(Value::Int(items.len() as i64)),
+        Value::Stream(items) => Ok(Value::Int(items.len() as i64)),
+        Value::Tuple(elems) => Ok(Value::Int(elems.len() as i64)),
         v => Err(format!("len() not supported for type {}", v.type_name())),
     }
 }
