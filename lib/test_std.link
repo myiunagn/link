@@ -1,0 +1,22 @@
+// Test the Link standard library.
+// After module loading, std::math functions are flattened to top-level.
+
+use std::math;
+use std::string;
+
+fn main() {
+    // std::math functions (flattened after import)
+    println(absolute(-5));
+    println(minimum(3, 7));
+    println(maximum(3, 7));
+    println(fib(10));
+    println(factorial(5));
+    println(ipow(2, 10));
+
+    // std::string functions (flattened)
+    if starts_with("hello world", "hello") { println(1); } else { println(0); }
+    if ends_with("hello world", "world")   { println(1); } else { println(0); }
+    if contains("hello world", "lo w")     { println(1); } else { println(0); }
+    println(is_blank("   "));
+    println(is_blank(" x "));
+}

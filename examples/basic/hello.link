@@ -1,0 +1,9 @@
+// The simplest Link program.
+//
+// Run with Rust Stage 0:   link run examples/basic/hello.link
+// Run with bootstrap:      ./bootstrap/build/link-bootstrap examples/basic/hello.link hello.c
+//                          cc -std=c99 hello.c -o hello && ./hello
+
+fn main() {
+    println(42);
+}

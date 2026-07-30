@@ -13,7 +13,31 @@ fn main() {
         return;
     }
 
-    let command = &args[1];
+    // Handle -h / -V anywhere (like `python -V script.py`)
+    for arg in &args[1..] {
+        if arg == "--help" || arg == "-h" || arg == "help" {
+            print_help();
+            return;
+        }
+        if arg == "--version" || arg == "-V" || arg == "version" {
+            print_version();
+            return;
+        }
+    }
+
+    let first = &args[1];
+
+    // If the first argument is a .link file, run it directly
+    // like `python script.py`
+    if first.ends_with(".link") {
+        if let Err(e) = run_file(first) {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+        return;
+    }
+
+    let command = first;
     if command == "run" {
         if args.len() < 3 {
             eprintln!("Usage: link run <file.link>");
@@ -49,10 +73,6 @@ fn main() {
             eprintln!("Error: {}", e);
             process::exit(1);
         }
-    } else if command == "--version" || command == "-V" {
-        println!("linkc 0.2.0");
-    } else if command == "--help" || command == "-h" {
-        print_help();
     } else {
         eprintln!("Unknown command: {}", command);
         eprintln!("Run `link --help` for usage.");
@@ -60,44 +80,64 @@ fn main() {
     }
 }
 
+fn print_version() {
+    println!("Link 1.0.0");
+    println!("Copyright (c) 2024 ctost link");
+    println!("License: MIT");
+}
+
 fn print_help() {
-    println!("Usage: link <command> [args]");
+    println!("Link 1.0.0 — a language for connecting everything.");
+    println!("Copyright (c) 2024 ctost link  License: MIT");
+    println!();
+    println!("Usage:");
+    println!("  link [options] <file.link> [args]       Run a Link program");
+    println!("  link [options]                           Start interactive REPL");
+    println!("  link <command> [args]                    Run a subcommand");
     println!();
     println!("Commands:");
-    println!("  run <file>              Run a Link source file");
-    println!("  compile <file> [opts]   Compile a Link source file");
-    println!("  repl                    Start interactive REPL");
-    println!("  bindgen <args>          Generate bindings from export blocks");
-    println!("  lsp                     Start the LSP server on stdio");
-    println!("  game <file> [domain]    Start game backend server from domain config");
-    println!("  --version, -V           Print version");
-    println!("  --help, -h              Print this help");
+    println!("  run    <file.link>          Run a Link source file");
+    println!("  compile <file.link> [opts]  Compile to native executable");
+    println!("  repl                        Start interactive REPL (default)");
+    println!("  bindgen --lang <L> <file>   Generate C/Python/TypeScript bindings");
+    println!("  lsp                         Start Language Server Protocol on stdio");
+    println!("  game   <file.link>          Start game backend server");
+    println!("  help                        Show this help");
+    println!("  version                     Show version information");
     println!();
-    println!("compile usage:");
-    println!("  link compile <input.link> [options]");
+    println!("Options (for compile):");
+    println!("  -o <path>           Output file path");
+    println!("  --backend <type>    Target: c (default) | llvm | python | wasm");
+    println!("  --emit-c            Emit C source instead of binary");
+    println!("  --emit-ir           Emit LLVM IR instead of binary");
+    println!("  --opt-level <0-3>   Optimization level (default: 2)");
+    println!("  -g                  Include debug symbols");
+    println!("  --no-link           Stop after codegen, don't link");
     println!();
-    println!("Options:");
-    println!("  -o <path>           Output path (default: input file stem)");
-    println!("  --backend <type>    Codegen backend: c (default) | llvm | python | wasm");
-    println!("  --emit-c            Emit C code (C backend only)");
-    println!("  --emit-ir           Emit LLVM IR (LLVM backend only)");
-    println!("  --opt-level <N>     Optimization level: 0-3 (default: 2)");
-    println!("  -g                  Include debug information");
-    println!("  --no-link           Don't link to native executable");
+    println!("Options (for bindgen):");
+    println!("  --lang <L>          Target: c | python | typescript");
+    println!("  -o <path>           Output file (default: stdout)");
+    println!("  --module <name>     Module name (default: input stem)");
+    println!();
+    println!("General options:");
+    println!("  -h, --help          Print this help and exit");
+    println!("  -V, --version       Print version and exit");
     println!();
     println!("Examples:");
-    println!("  link compile myfile.link");
-    println!("  link compile myfile.link --backend llvm --emit-ir");
-    println!("  link compile myfile.link --opt-level 3 -g");
-    println!("  link compile myfile.link --emit-c -o output.c");
-    println!("  link compile myfile.link --backend python -o output.py");
-    println!("  link compile myfile.link --backend wasm -o output.wat");
+    println!("  link hello.link");
+    println!("  link run hello.link");
+    println!("  link compile app.link -o app");
+    println!("  link compile app.link --backend python -o app.py");
+    println!("  link compile app.link --backend wasm -o app.wat");
+    println!("  link bindgen --lang c mylib.link -o mylib.h");
+    println!("  link lsp");
     println!();
-    println!("bindgen usage:");
-    println!("  link bindgen --lang <lang> <input.link> [-o <output>] [--module <name>]");
-    println!("    --lang      Target language: c | python | typescript");
-    println!("    -o          Output file (default: stdout)");
-    println!("    --module    Module name (default: input file stem)");
+    println!("Environment:");
+    println!("  CC                  C compiler (default: cc / gcc)");
+    println!("  LINKPATH            Additional module search paths");
+    println!();
+    println!("Project: https://github.com/myiunagn/link");
+    println!("Docs:    https://myiunagn.github.io/linkdoc/");
 }
 
 fn run_compile(args: &[String]) -> Result<(), String> {
@@ -379,8 +419,8 @@ fn run_game(filename: &str, domain_name: Option<String>) -> Result<(), String> {
 }
 
 fn run_repl() {
-    println!("Link 0.1.0 REPL");
-    println!("Type 'exit' or Ctrl+C to quit");
+    println!("Link 1.0.0 (ctost link) [C backend]");
+    println!("Type \"help\" for more information, \"exit\" to quit.");
     let mut env = linkc_interpreter::Environment::new();
     let mut ctx = linkc_interpreter::InterpContext::new();
     let mut input = String::new();
@@ -394,6 +434,22 @@ fn run_repl() {
                 let line = input.trim();
                 if line.is_empty() { continue; }
                 if line == "exit" || line == "quit" { break; }
+                if line == "help" {
+                    println!("Type \"exit\" to quit, \"copyright\" for copyright, \"version\" for version.");
+                    println!("Enter any Link expression or statement to evaluate it.");
+                    println!("Example:  1 + 2");
+                    println!("         let x = 42;");
+                    println!("         println(x);");
+                    continue;
+                }
+                if line == "copyright" {
+                    println!("Copyright (c) 2024 ctost link  License: MIT");
+                    continue;
+                }
+                if line == "version" {
+                    println!("Link 1.0.0 (ctost link)");
+                    continue;
+                }
                 match run_line(line, &mut env, &mut ctx) {
                     Ok(val) => print_result(&val),
                     Err(e) => eprintln!("Error: {}", e),
@@ -439,26 +495,35 @@ fn load_modules(program: linkc_parser::Program, entry_path: &str) -> Result<link
         .to_path_buf();
 
     fn find_module(base: &Path, path: &[String]) -> Option<PathBuf> {
-        // 尝试 base/path1/path2.../last.link
-        let mut p = base.to_path_buf();
-        for seg in &path[..path.len() - 1] {
-            p.push(seg);
+        // Search in base, plus standard library locations
+        let mut search_bases = vec![base.to_path_buf()];
+        // Also search lib/ relative to the project (for std library)
+        if let Some(lib_dir) = find_lib_dir(base) {
+            search_bases.push(lib_dir);
         }
+
         let last = path.last().unwrap();
-        // 1. base/.../last.link
-        let f1 = p.join(format!("{}.link", last));
-        if f1.exists() {
-            return Some(f1);
+        let rel_dir: PathBuf = path[..path.len() - 1].iter().collect();
+
+        for dir in &search_bases {
+            let p = dir.join(&rel_dir);
+            let f1 = p.join(format!("{}.link", last));
+            if f1.exists() { return Some(f1); }
+            let f2 = p.join(last).join("mod.link");
+            if f2.exists() { return Some(f2); }
+            let f3 = p.join(last);
+            if f3.exists() && f3.is_file() { return Some(f3); }
         }
-        // 2. base/.../last/mod.link
-        let f2 = p.join(last).join("mod.link");
-        if f2.exists() {
-            return Some(f2);
-        }
-        // 3. base/.../last/link (无扩展名)
-        let f3 = p.join(last);
-        if f3.exists() && f3.is_file() {
-            return Some(f3);
+        None
+    }
+
+    fn find_lib_dir(entry_dir: &Path) -> Option<PathBuf> {
+        // Walk up from entry_dir looking for lib/std/
+        let mut current = entry_dir.to_path_buf();
+        for _ in 0..5 {
+            let lib = current.join("lib/std");
+            if lib.exists() { return Some(current.join("lib")); }
+            if !current.pop() { break; }
         }
         None
     }
@@ -499,7 +564,125 @@ fn load_modules(program: linkc_parser::Program, entry_path: &str) -> Result<link
             }
         }
         merged.extend(deferred);
+
+        // Resolve module::function calls to plain function calls
         Ok(merged)
+    }
+
+    // Replace module::func() with func() for imported modules
+    fn resolve_module_paths(stmts: Vec<Stmt>, module_names: &[String]) -> Vec<Stmt> {
+        stmts.into_iter().map(|stmt| resolve_stmt_paths(stmt, module_names)).collect()
+    }
+
+    fn resolve_stmt_paths(stmt: linkc_parser::Stmt, module_names: &[String]) -> linkc_parser::Stmt {
+        use linkc_parser::{Expr, Stmt};
+        match stmt {
+            Stmt::Expr(expr) => Stmt::Expr(resolve_expr_paths(expr, module_names)),
+            Stmt::LetDecl { name, type_annotation, value } => {
+                Stmt::LetDecl {
+                    name,
+                    type_annotation,
+                    value: value.map(|e| resolve_expr_paths(e, module_names)),
+                }
+            }
+            Stmt::Return(Some(expr)) => Stmt::Return(Some(resolve_expr_paths(expr, module_names))),
+            Stmt::If { condition, then_branch, else_branch } => Stmt::If {
+                condition: resolve_expr_paths(condition, module_names),
+                then_branch: resolve_block_paths(then_branch, module_names),
+                else_branch: else_branch.map(|b| resolve_block_paths(b, module_names)),
+            },
+            Stmt::While { condition, body } => Stmt::While {
+                condition: resolve_expr_paths(condition, module_names),
+                body: resolve_block_paths(body, module_names),
+            },
+            Stmt::Assign { target, value } => Stmt::Assign {
+                target: Box::new(resolve_expr_paths(*target, module_names)),
+                value: Box::new(resolve_expr_paths(*value, module_names)),
+            },
+            Stmt::Match { scrutinee, arms } => Stmt::Match {
+                scrutinee: resolve_expr_paths(scrutinee, module_names),
+                arms: arms.into_iter().map(|arm| linkc_parser::MatchArm {
+                    pattern: arm.pattern,
+                    body: resolve_block_paths(arm.body, module_names),
+                }).collect(),
+            },
+            Stmt::FnDecl { name, params, return_type, body, is_async } => Stmt::FnDecl {
+                name,
+                params,
+                return_type,
+                body: resolve_block_paths(body, module_names),
+                is_async,
+            },
+            other => other,
+        }
+    }
+
+    fn resolve_block_paths(block: linkc_parser::Block, module_names: &[String]) -> linkc_parser::Block {
+        linkc_parser::Block {
+            stmts: block.stmts.into_iter().map(|s| resolve_stmt_paths(s, module_names)).collect(),
+        }
+    }
+
+    fn resolve_expr_paths(expr: linkc_parser::Expr, module_names: &[String]) -> linkc_parser::Expr {
+        use linkc_parser::Expr;
+        match expr {
+            Expr::PathCall { base, segment, args } => {
+                if module_names.contains(&base) {
+                    Expr::Call { callee: segment, args: args.into_iter().map(|e| resolve_expr_paths(e, module_names)).collect() }
+                } else {
+                    Expr::PathCall {
+                        base,
+                        segment,
+                        args: args.into_iter().map(|e| resolve_expr_paths(e, module_names)).collect(),
+                    }
+                }
+            }
+            Expr::Path { base, segment } => {
+                if module_names.contains(&base) {
+                    Expr::Ident(segment)
+                } else {
+                    Expr::Path { base, segment }
+                }
+            }
+            Expr::Call { callee, args } => Expr::Call {
+                callee,
+                args: args.into_iter().map(|e| resolve_expr_paths(e, module_names)).collect(),
+            },
+            Expr::Binary { op, left, right } => Expr::Binary {
+                op,
+                left: Box::new(resolve_expr_paths(*left, module_names)),
+                right: Box::new(resolve_expr_paths(*right, module_names)),
+            },
+            Expr::Unary { op, operand } => Expr::Unary {
+                op,
+                operand: Box::new(resolve_expr_paths(*operand, module_names)),
+            },
+            Expr::FieldAccess { target, field } => Expr::FieldAccess {
+                target: Box::new(resolve_expr_paths(*target, module_names)),
+                field,
+            },
+            Expr::StructInit { name, fields } => Expr::StructInit {
+                name,
+                fields: fields.into_iter().map(|(k, v)| (k, resolve_expr_paths(v, module_names))).collect(),
+            },
+            Expr::IfExpr { condition, then_value, else_value } => Expr::IfExpr {
+                condition: Box::new(resolve_expr_paths(*condition, module_names)),
+                then_value: Box::new(resolve_expr_paths(*then_value, module_names)),
+                else_value: Box::new(resolve_expr_paths(*else_value, module_names)),
+            },
+            Expr::Index { target, index } => Expr::Index {
+                target: Box::new(resolve_expr_paths(*target, module_names)),
+                index: Box::new(resolve_expr_paths(*index, module_names)),
+            },
+            Expr::MatchExpr { scrutinee, arms } => Expr::MatchExpr {
+                scrutinee: Box::new(resolve_expr_paths(*scrutinee, module_names)),
+                arms: arms.into_iter().map(|arm| linkc_parser::MatchArm {
+                    pattern: arm.pattern,
+                    body: resolve_block_paths(arm.body, module_names),
+                }).collect(),
+            },
+            other => other,
+        }
     }
 
     let P::Block(mut stmts) = program;
@@ -511,6 +694,11 @@ fn load_modules(program: linkc_parser::Program, entry_path: &str) -> Result<link
         .canonicalize()
         .unwrap_or_else(|_| Path::new(entry_path).to_path_buf());
     loaded.insert(entry_canon);
+
+    // Collect module names from use declarations
+    let module_names: Vec<String> = stmts.iter().filter_map(|stmt| {
+        if let Stmt::UseDecl { path, .. } = stmt { path.last().cloned() } else { None }
+    }).collect();
 
     // 第一遍: 收集 use 声明并加载模块,延迟其他语句
     let mut deferred = Vec::new();
@@ -530,6 +718,9 @@ fn load_modules(program: linkc_parser::Program, entry_path: &str) -> Result<link
         }
     }
     merged.extend(deferred);
+
+    // Resolve module::function → function for known modules
+    let merged = resolve_module_paths(merged, &module_names);
 
     Ok(P::Block(merged))
 }

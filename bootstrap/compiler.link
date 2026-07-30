@@ -1,0 +1,1865 @@
+// Link Stage 1 seed compiler — v2 (extended for self-hosting).
+//
+// Written in the Link subset that the Rust Stage 0 C backend can compile.
+// Translates a growing Link surface to portable C99.
+//
+// New in v2 (HANDOFF §6.1–6.2):
+//   - string literals with C escaping
+//   - `!`, `&&`, `||`
+//   - `bool`, `str`, named types in function signatures
+//   - `struct` declarations → C typedef struct
+//   - field access `value.field`
+//   - struct init `Type { field: value }`
+//   - typed `let name: Type = value;`
+//   - borrow syntax `&value` (C address-of), `&T` → `T*`
+//   - two-pass compilation (pre-scan structs + function signatures)
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+struct ParseResult {
+    code: str,
+    next_pos: i64,
+    valid: bool,
+}
+
+fn make_result(code: str, next_pos: i64, valid: bool) -> ParseResult {
+    return ParseResult { code: code, next_pos: next_pos, valid: valid };
+}
+
+fn is_space(ch: i64) -> bool {
+    return ch == 32 || ch == 9 || ch == 10 || ch == 13;
+}
+
+fn is_digit(ch: i64) -> bool {
+    return ch >= 48 && ch <= 57;
+}
+
+fn is_ident_start(ch: i64) -> bool {
+    return (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 95;
+}
+
+fn is_ident_continue(ch: i64) -> bool {
+    return is_ident_start(ch) || is_digit(ch);
+}
+
+fn skip_space(input: &str, start: i64) -> i64 {
+    let pos = start;
+    let length = str_len(input);
+    while pos < length {
+        let ch = str_char_code(input, pos);
+        if is_space(ch) {
+            pos = pos + 1;
+        } else {
+            if ch == 47 && pos + 1 < length && str_char_code(input, pos + 1) == 47 {
+                pos = pos + 2;
+                while pos < length && str_char_code(input, pos) != 10 {
+                    pos = pos + 1;
+                }
+            } else {
+                return pos;
+            }
+        }
+    }
+    return pos;
+}
+
+fn scan_ident(input: &str, start: i64) -> i64 {
+    let pos = start;
+    let length = str_len(input);
+    if pos >= length || !is_ident_start(str_char_code(input, pos)) {
+        return start;
+    }
+    pos = pos + 1;
+    while pos < length && is_ident_continue(str_char_code(input, pos)) {
+        pos = pos + 1;
+    }
+    return pos;
+}
+
+// Return the 1-based line number for a byte offset.
+fn byte_line(input: &str, target: i64) -> i64 {
+    let line = 1;
+    let pos = 0;
+    while pos < target && pos < str_len(input) {
+        if str_char_code(input, pos) == 10 {
+            line = line + 1;
+        }
+        pos = pos + 1;
+    }
+    return line;
+}
+
+// Return the 1-based column number for a byte offset.
+fn byte_col(input: &str, target: i64) -> i64 {
+    let col = 1;
+    let pos = target - 1;
+    while pos >= 0 && str_char_code(input, pos) != 10 {
+        col = col + 1;
+        pos = pos - 1;
+    }
+    return col;
+}
+
+fn keyword_at(input: &str, start: i64, word: &str) -> bool {
+    let end_pos = start + str_len(word);
+    if end_pos > str_len(input) {
+        return false;
+    }
+    let found = str_substring(input, start, end_pos);
+    if !str_eq(found, word) {
+        return false;
+    }
+    if end_pos < str_len(input) && is_ident_continue(str_char_code(input, end_pos)) {
+        return false;
+    }
+    return true;
+}
+
+fn c_name(name: &str) -> str {
+    if str_eq(name, "auto") || str_eq(name, "break") || str_eq(name, "case") ||
+       str_eq(name, "char") || str_eq(name, "const") || str_eq(name, "continue") ||
+       str_eq(name, "default") || str_eq(name, "do") || str_eq(name, "double") ||
+       str_eq(name, "else") || str_eq(name, "enum") || str_eq(name, "extern") ||
+       str_eq(name, "float") || str_eq(name, "for") || str_eq(name, "goto") ||
+       str_eq(name, "if") || str_eq(name, "inline") || str_eq(name, "int") ||
+       str_eq(name, "long") || str_eq(name, "register") || str_eq(name, "restrict") ||
+       str_eq(name, "return") || str_eq(name, "short") || str_eq(name, "signed") ||
+       str_eq(name, "sizeof") || str_eq(name, "static") || str_eq(name, "struct") ||
+       str_eq(name, "switch") || str_eq(name, "typedef") || str_eq(name, "union") ||
+       str_eq(name, "unsigned") || str_eq(name, "void") || str_eq(name, "volatile") ||
+       str_eq(name, "while") ||
+       str_eq(name, "str_concat") || str_eq(name, "str_len") ||
+       str_eq(name, "str_eq") || str_eq(name, "str_substring") ||
+       str_eq(name, "str_char_code") ||
+       str_eq(name, "arg") || str_eq(name, "file_read") ||
+       str_eq(name, "file_write") || str_eq(name, "args_len") ||
+       str_eq(name, "main") ||
+       str_eq(name, "printf") || str_eq(name, "fprintf") ||
+       str_eq(name, "exit") || str_eq(name, "malloc") ||
+       str_eq(name, "free") || str_eq(name, "fopen") ||
+       str_eq(name, "fclose") || str_eq(name, "fread") ||
+       str_eq(name, "fwrite") || str_eq(name, "strlen") ||
+       str_eq(name, "strcmp") || str_eq(name, "strcpy") ||
+       str_eq(name, "memcpy") || str_eq(name, "memset") ||
+       str_eq(name, "puts") {
+        return str_concat("link_", name);
+    }
+    return str_concat("", name);
+}
+
+// Map Link type annotation → C type string.
+// &T     → T*
+// &str   → const char*
+// str    → const char*
+// i64    → int64_t
+// bool   → bool
+// Name   → Name
+fn link_type_to_c(link_type: &str) -> str {
+    if str_eq(link_type, "i64") {
+        return "int64_t";
+    }
+    if str_eq(link_type, "bool") {
+        return "bool";
+    }
+    if str_eq(link_type, "str") {
+        return "const char*";
+    }
+    if str_eq(link_type, "f64") {
+        return "double";
+    }
+    if str_eq(link_type, "i32") {
+        return "int32_t";
+    }
+    // Check for &T (borrow / reference)
+    if str_char_code(link_type, 0) == 38 {
+        let inner = str_substring(link_type, 1, str_len(link_type));
+        if str_eq(&inner, "str") {
+            return "const char*";
+        }
+        let inner_c = link_type_to_c(&inner);
+        return str_concat(inner_c, "*");
+    }
+    return str_concat("", link_type);
+}
+
+fn binary_code(left: &str, op: &str, right: &str) -> str {
+    let code = str_concat("(", left);
+    code = str_concat(code, " ");
+    code = str_concat(code, op);
+    code = str_concat(code, " ");
+    code = str_concat(code, right);
+    return str_concat(code, ")");
+}
+
+// ── type annotation parser ──────────────────────────────────────────────────
+// Parses a type annotation: i64, bool, str, &str, &T, NamedType
+
+fn parse_type(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start);
+    let length = str_len(input);
+    if pos >= length {
+        return make_result("", pos, false);
+    }
+
+    // Collect the raw Link type string first, then resolve to C
+    let raw: str = "";
+    let end_pos = pos;
+
+    if str_char_code(input, pos) == 38 {
+        // &T: collect "&" + inner raw type
+        let inner = parse_type_raw(input, pos + 1);
+        if !inner.valid {
+            return inner;
+        }
+        raw = str_concat(&"&", &inner.code);
+        end_pos = inner.next_pos;
+    } else {
+        if is_ident_start(str_char_code(input, pos)) {
+            end_pos = scan_ident(input, pos);
+            raw = str_substring(input, pos, end_pos);
+        } else {
+            return make_result("", pos, false);
+        }
+    }
+
+    let c_type = link_type_to_c(&raw);
+    return make_result(c_type, end_pos, true);
+}
+
+// Parse a type WITHOUT C resolution (returns raw Link type name)
+fn parse_type_raw(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start);
+    let length = str_len(input);
+    if pos >= length {
+        return make_result("", pos, false);
+    }
+
+    if str_char_code(input, pos) == 38 {
+        let inner = parse_type_raw(input, pos + 1);
+        if !inner.valid {
+            return inner;
+        }
+        let raw = str_concat(&"&", &inner.code);
+        return make_result(raw, inner.next_pos, true);
+    }
+
+    if is_ident_start(str_char_code(input, pos)) {
+        let end_pos = scan_ident(input, pos);
+        let name = str_substring(input, pos, end_pos);
+        return make_result(name, end_pos, true);
+    }
+
+    return make_result("", pos, false);
+}
+
+// ── expression parser (Pratt-style precedence climbing) ────────────────────
+
+fn parse_expression(input: &str, start: i64) -> ParseResult {
+    return parse_or(input, start);
+}
+
+fn parse_primary(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start);
+    let length = str_len(input);
+    if pos >= length {
+        return make_result("", pos, false);
+    }
+
+    let ch = str_char_code(input, pos);
+
+    // integer literal
+    if is_digit(ch) {
+        let end_pos = pos + 1;
+        while end_pos < length && is_digit(str_char_code(input, end_pos)) {
+            end_pos = end_pos + 1;
+        }
+        return make_result(str_substring(input, pos, end_pos), end_pos, true);
+    }
+
+    // string literal "..."
+    if ch == 34 {
+        let content = "\"";
+        let scan_pos = pos + 1;
+        while scan_pos < length {
+            let c = str_char_code(input, scan_pos);
+            if c == 34 {
+                let result = str_concat(content, "\"");
+                return make_result(result, scan_pos + 1, true);
+            }
+            if c == 92 {
+                // backslash escape: pass through to C
+                content = str_concat(content, "\\");
+                scan_pos = scan_pos + 1;
+                if scan_pos < length {
+                    let escaped = str_char_code(input, scan_pos);
+                    if escaped == 110 {
+                        content = str_concat(content, "n");
+                    } else {
+                        if escaped == 114 {
+                            content = str_concat(content, "r");
+                        } else {
+                            if escaped == 116 {
+                                content = str_concat(content, "t");
+                            } else {
+                                if escaped == 92 {
+                                    content = str_concat(content, "\\");
+                                } else {
+                                    if escaped == 34 {
+                                        content = str_concat(content, "\"");
+                                    } else {
+                                        content = str_concat(content, str_substring(input, scan_pos, scan_pos + 1));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                scan_pos = scan_pos + 1;
+            } else {
+                if c == 10 || c == 13 {
+                    return make_result("", scan_pos, false);
+                }
+                content = str_concat(content, str_substring(input, scan_pos, scan_pos + 1));
+                scan_pos = scan_pos + 1;
+            }
+        }
+        return make_result("", pos, false);
+    }
+
+    // identifier, keyword literal, or function call
+    if is_ident_start(ch) {
+        let end_pos = scan_ident(input, pos);
+        let raw_name: str = str_substring(input, pos, end_pos);
+
+        // true / false literals
+        if str_eq(&raw_name, "true") {
+            return make_result("true", end_pos, true);
+        }
+        if str_eq(&raw_name, "false") {
+            return make_result("false", end_pos, true);
+        }
+
+        let name: str = c_name(&raw_name);
+
+        // function call or struct init
+        let call_pos = skip_space(input, end_pos);
+        let call_ch = str_char_code(input, call_pos);
+
+        // function call: name(args)
+        if call_ch == 40 {
+            let args_code: str = "";
+            let next_pos = skip_space(input, call_pos + 1);
+            let first_arg = true;
+            while str_char_code(input, next_pos) != 41 {
+                let argument = parse_expression(input, next_pos);
+                if !argument.valid {
+                    return argument;
+                }
+                if !first_arg {
+                    args_code = str_concat(args_code, ", ");
+                }
+                args_code = str_concat(args_code, argument.code);
+                first_arg = false;
+                next_pos = skip_space(input, argument.next_pos);
+                if str_char_code(input, next_pos) == 44 {
+                    next_pos = skip_space(input, next_pos + 1);
+                } else {
+                    if str_char_code(input, next_pos) != 41 {
+                        return make_result("", next_pos, false);
+                    }
+                }
+            }
+            let call_code: str = str_concat(name, "(");
+            call_code = str_concat(call_code, args_code);
+            call_code = str_concat(call_code, ")");
+            return make_result(call_code, next_pos + 1, true);
+        }
+
+        // struct init: Name { field: value, ... }
+        // Only if identifier starts with uppercase (type name convention)
+        let first_char = str_char_code(&raw_name, 0);
+        if call_ch == 123 && first_char >= 65 && first_char <= 90 {
+            let fields_code: str = "";
+            let next_pos = skip_space(input, call_pos + 1);
+            let first_field = true;
+            while str_char_code(input, next_pos) != 125 {
+                // field name
+                let field_end = scan_ident(input, next_pos);
+                if field_end == next_pos {
+                    return make_result("", next_pos, false);
+                }
+                let field_name = str_substring(input, next_pos, field_end);
+                let colon_pos = skip_space(input, field_end);
+                if str_char_code(input, colon_pos) != 58 {
+                    return make_result("", colon_pos, false);
+                }
+                let value = parse_expression(input, colon_pos + 1);
+                if !value.valid {
+                    return value;
+                }
+                if !first_field {
+                    fields_code = str_concat(fields_code, ", ");
+                }
+                fields_code = str_concat(fields_code, ".");
+                fields_code = str_concat(fields_code, &field_name);
+                fields_code = str_concat(fields_code, " = ");
+                fields_code = str_concat(fields_code, value.code);
+                first_field = false;
+                next_pos = skip_space(input, value.next_pos);
+                if str_char_code(input, next_pos) == 44 {
+                    next_pos = skip_space(input, next_pos + 1);
+                } else {
+                    if str_char_code(input, next_pos) != 125 {
+                        return make_result("", next_pos, false);
+                    }
+                }
+            }
+            let init_code = str_concat("((", name);
+            init_code = str_concat(init_code, "){ ");
+            init_code = str_concat(init_code, &fields_code);
+            init_code = str_concat(init_code, " })");
+            return make_result(init_code, next_pos + 1, true);
+        }
+
+        // enum variant: Name::Variant or Name::Variant(args)
+        if call_ch == 58 && str_char_code(input, call_pos + 1) == 58 {
+            let var_pos = skip_space(input, call_pos + 2);
+            let var_end = scan_ident(input, var_pos);
+            if var_end == var_pos {
+                return make_result("", var_pos, false);
+            }
+            let variant = str_substring(input, var_pos, var_end);
+            let after_var = skip_space(input, var_end);
+
+            // Check for payload args: Name::Variant(arg1, arg2)
+            if str_char_code(input, after_var) == 40 {
+                let args_code: str = "";
+                let arg_pos = skip_space(input, after_var + 1);
+                let first_a = true;
+                while str_char_code(input, arg_pos) != 41 {
+                    let arg_expr = parse_expression(input, arg_pos);
+                    if !arg_expr.valid { return arg_expr; }
+                    if !first_a { args_code = str_concat(args_code, ", "); }
+                    args_code = str_concat(args_code, arg_expr.code);
+                    first_a = false;
+                    arg_pos = skip_space(input, arg_expr.next_pos);
+                    if str_char_code(input, arg_pos) == 44 {
+                        arg_pos = skip_space(input, arg_pos + 1);
+                    } else {
+                        if str_char_code(input, arg_pos) != 41 {
+                            return make_result("", arg_pos, false);
+                        }
+                    }
+                }
+                let code: str = "((";
+                code = str_concat(code, &raw_name);
+                code = str_concat(code, "){ .discriminant = ");
+                code = str_concat(code, &raw_name);
+                code = str_concat(code, "_v_");
+                code = str_concat(code, &variant);
+                code = str_concat(code, ", .data.");
+                code = str_concat(code, &variant);
+                code = str_concat(code, " = { ");
+                code = str_concat(code, &args_code);
+                code = str_concat(code, " } })");
+                return make_result(code, arg_pos + 1, true);
+            }
+
+            // No payload: Name::Variant
+            let code: str = "((";
+            code = str_concat(code, &raw_name);
+            code = str_concat(code, "){ .discriminant = ");
+            code = str_concat(code, &raw_name);
+            code = str_concat(code, "_v_");
+            code = str_concat(code, &variant);
+            code = str_concat(code, " })");
+            return make_result(code, after_var, true);
+        }
+
+        return make_result(name, end_pos, true);
+    }
+
+    // list literal: [a, b, c] → LinkList compound literal
+    if ch == 91 {
+        let items_code: str = "";
+        let list_pos = skip_space(input, pos + 1);
+        let first = true;
+        let count: i64 = 0;
+        while str_char_code(input, list_pos) != 93 {
+            let item = parse_expression(input, list_pos);
+            if !item.valid {
+                return item;
+            }
+            if !first {
+                items_code = str_concat(items_code, ", ");
+            }
+            items_code = str_concat(items_code, item.code);
+            count = count + 1;
+            first = false;
+            list_pos = skip_space(input, item.next_pos);
+            if str_char_code(input, list_pos) == 44 {
+                list_pos = skip_space(input, list_pos + 1);
+            } else {
+                if str_char_code(input, list_pos) != 93 {
+                    return make_result("", list_pos, false);
+                }
+            }
+        }
+        let code: str = "((LinkList){ .count = ";
+        if count == 0 { code = str_concat(code, "0"); }
+        if count == 1 { code = str_concat(code, "1"); }
+        if count == 2 { code = str_concat(code, "2"); }
+        if count == 3 { code = str_concat(code, "3"); }
+        if count == 4 { code = str_concat(code, "4"); }
+        if count == 5 { code = str_concat(code, "5"); }
+        if count == 6 { code = str_concat(code, "6"); }
+        if count == 7 { code = str_concat(code, "7"); }
+        if count == 8 { code = str_concat(code, "8"); }
+        if count == 9 { code = str_concat(code, "9"); }
+        code = str_concat(code, ", .items = { ");
+        code = str_concat(code, &items_code);
+        code = str_concat(code, " } })");
+        return make_result(code, list_pos + 1, true);
+    }
+
+    // parenthesized expression
+    if ch == 40 {
+        let inner = parse_expression(input, pos + 1);
+        if !inner.valid {
+            return inner;
+        }
+        let close_pos = skip_space(input, inner.next_pos);
+        if close_pos >= length || str_char_code(input, close_pos) != 41 {
+            return make_result("", close_pos, false);
+        }
+        return make_result(str_concat(str_concat("(", inner.code), ")"), close_pos + 1, true);
+    }
+
+    return make_result("", pos, false);
+}
+
+// ── postfix: field access ───────────────────────────────────────────────────
+
+fn parse_postfix(input: &str, start: i64) -> ParseResult {
+    let result = parse_primary(input, start);
+    if !result.valid {
+        return result;
+    }
+    let code = result.code;
+    let next_pos = result.next_pos;
+    while true {
+        let pos = skip_space(input, next_pos);
+        // field access: expr.field
+        if str_char_code(input, pos) == 46 {
+            let field_end = scan_ident(input, pos + 1);
+            if field_end == pos + 1 {
+                return make_result(code, next_pos, true);
+            }
+            let field = str_substring(input, pos + 1, field_end);
+            code = str_concat(code, ".");
+            code = str_concat(code, &field);
+            next_pos = field_end;
+        } else {
+            return make_result(code, next_pos, true);
+        }
+    }
+    return make_result(code, next_pos, true);
+}
+
+// ── unary: -expr, !expr, &expr ──────────────────────────────────────────────
+
+fn parse_unary(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start);
+    let ch = str_char_code(input, pos);
+
+    if ch == 45 {
+        // unary minus
+        let value = parse_unary(input, pos + 1);
+        if !value.valid {
+            return value;
+        }
+        return make_result(str_concat("-", value.code), value.next_pos, true);
+    }
+
+    if ch == 33 {
+        // logical not
+        let value = parse_unary(input, pos + 1);
+        if !value.valid {
+            return value;
+        }
+        let inner = str_concat("!(", value.code);
+        let code = str_concat(&inner, ")");
+        return make_result(code, value.next_pos, true);
+    }
+
+    if ch == 38 {
+        // borrow / address-of: &expr → emit expr directly
+        // (C backend maps &T to T*, and &value is just the value itself)
+        let value = parse_unary(input, pos + 1);
+        if !value.valid {
+            return value;
+        }
+        return make_result(value.code, value.next_pos, true);
+    }
+
+    return parse_postfix(input, start);
+}
+
+// ── multiplicative: * / % ────────────────────────────────────────────────────
+
+fn parse_multiply(input: &str, start: i64) -> ParseResult {
+    let left = parse_unary(input, start);
+    if !left.valid {
+        return left;
+    }
+    let code = left.code;
+    let next_pos = left.next_pos;
+    while true {
+        let op_pos = skip_space(input, next_pos);
+        let ch = str_char_code(input, op_pos);
+        if ch != 42 && ch != 47 && ch != 37 {
+            return make_result(code, op_pos, true);
+        }
+        let right = parse_unary(input, op_pos + 1);
+        if !right.valid {
+            return right;
+        }
+        let op: str = str_substring(input, op_pos, op_pos + 1);
+        code = binary_code(&code, &op, &right.code);
+        next_pos = right.next_pos;
+    }
+    return make_result(code, next_pos, true);
+}
+
+// ── additive: + - ────────────────────────────────────────────────────────────
+
+fn parse_add(input: &str, start: i64) -> ParseResult {
+    let left = parse_multiply(input, start);
+    if !left.valid {
+        return left;
+    }
+    let code = left.code;
+    let next_pos = left.next_pos;
+    while true {
+        let op_pos = skip_space(input, next_pos);
+        let ch = str_char_code(input, op_pos);
+        if ch != 43 && ch != 45 {
+            return make_result(code, op_pos, true);
+        }
+        let right = parse_multiply(input, op_pos + 1);
+        if !right.valid {
+            return right;
+        }
+        let op: str = str_substring(input, op_pos, op_pos + 1);
+        code = binary_code(&code, &op, &right.code);
+        next_pos = right.next_pos;
+    }
+    return make_result(code, next_pos, true);
+}
+
+// ── comparison: == != < > <= >= ──────────────────────────────────────────────
+
+fn parse_compare(input: &str, start: i64) -> ParseResult {
+    let left = parse_add(input, start);
+    if !left.valid {
+        return left;
+    }
+    let op_pos = skip_space(input, left.next_pos);
+    let ch = str_char_code(input, op_pos);
+    if ch != 61 && ch != 33 && ch != 60 && ch != 62 {
+        return make_result(left.code, op_pos, true);
+    }
+
+    let op_end = op_pos + 1;
+    if str_char_code(input, op_end) == 61 {
+        op_end = op_end + 1;
+    } else {
+        if ch == 61 || ch == 33 {
+            return make_result("", op_pos, false);
+        }
+    }
+    let right = parse_add(input, op_end);
+    if !right.valid {
+        return right;
+    }
+    let op: str = str_substring(input, op_pos, op_end);
+    return make_result(binary_code(&left.code, &op, &right.code), right.next_pos, true);
+}
+
+// ── logical AND: && ──────────────────────────────────────────────────────────
+
+fn parse_and(input: &str, start: i64) -> ParseResult {
+    let left = parse_compare(input, start);
+    if !left.valid {
+        return left;
+    }
+    let code = left.code;
+    let next_pos = left.next_pos;
+    while true {
+        let op_pos = skip_space(input, next_pos);
+        if !keyword_at(input, op_pos, &"&&") {
+            return make_result(code, op_pos, true);
+        }
+        let right = parse_compare(input, op_pos + 2);
+        if !right.valid {
+            return right;
+        }
+        code = binary_code(&code, &"&&", &right.code);
+        next_pos = right.next_pos;
+    }
+    return make_result(code, next_pos, true);
+}
+
+// ── logical OR: || ───────────────────────────────────────────────────────────
+
+fn parse_or(input: &str, start: i64) -> ParseResult {
+    let left = parse_and(input, start);
+    if !left.valid {
+        return left;
+    }
+    let code = left.code;
+    let next_pos = left.next_pos;
+    while true {
+        let op_pos = skip_space(input, next_pos);
+        if !keyword_at(input, op_pos, &"||") {
+            return make_result(code, op_pos, true);
+        }
+        let right = parse_and(input, op_pos + 2);
+        if !right.valid {
+            return right;
+        }
+        code = binary_code(&code, &"||", &right.code);
+        next_pos = right.next_pos;
+    }
+    return make_result(code, next_pos, true);
+}
+
+// ── statements ──────────────────────────────────────────────────────────────
+
+fn finish_statement(input: &str, start: i64) -> i64 {
+    let pos = skip_space(input, start);
+    if str_char_code(input, pos) == 59 {
+        return pos + 1;
+    }
+    return -1;
+}
+
+fn parse_block(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start);
+    if str_char_code(input, pos) != 123 {
+        return make_result("", pos, false);
+    }
+    pos = pos + 1;
+    let code = "";
+    while pos < str_len(input) {
+        pos = skip_space(input, pos);
+        if str_char_code(input, pos) == 125 {
+            return make_result(code, pos + 1, true);
+        }
+        let statement = parse_statement(input, pos);
+        if !statement.valid {
+            return statement;
+        }
+        code = str_concat(code, statement.code);
+        pos = statement.next_pos;
+    }
+    return make_result("", pos, false);
+}
+
+// ── let statement (typed or untyped) ─────────────────────────────────────────
+
+// Searches ret_types map for a function's return C type.
+// ret_types format: |funcname:rettype|funcname:rettype|...
+fn lookup_ret_type(ret_types: &str, func_name: &str) -> str {
+    let search: str = str_concat(&"|", func_name);
+    search = str_concat(&search, &":");
+    let pos = 0;
+    let rlen = str_len(ret_types);
+    let slen = str_len(&search);
+    while pos < rlen {
+        if pos + slen <= rlen {
+            let chunk = str_substring(ret_types, pos, pos + slen);
+            if str_eq(&chunk, &search) {
+                // Found: extract the type (until next | or end)
+                let type_start = pos + slen;
+                let type_end = type_start;
+                while type_end < rlen && str_char_code(ret_types, type_end) != 124 {
+                    type_end = type_end + 1;
+                }
+                return str_substring(ret_types, type_start, type_end);
+            }
+        }
+        // Advance to next | or end
+        while pos < rlen && str_char_code(ret_types, pos) != 124 {
+            pos = pos + 1;
+        }
+        if pos < rlen {
+            pos = pos + 1;
+        }
+    }
+    return "int64_t";
+}
+
+// Extract function name from expression code.
+// Assumes expr starts with a function call: funcname(...)
+fn expr_callee_name(expr_code: &str) -> str {
+    let len = str_len(expr_code);
+    let pos = 0;
+    // scan identifier
+    while pos < len {
+        let ch = str_char_code(expr_code, pos);
+        if is_ident_continue(ch) {
+            pos = pos + 1;
+        } else {
+            return str_substring(expr_code, 0, pos);
+        }
+    }
+    return str_substring(expr_code, 0, pos);
+}
+
+fn parse_let(input: &str, start: i64) -> ParseResult {
+    let name_pos = skip_space(input, start + 3);
+    let name_end = scan_ident(input, name_pos);
+    if name_end == name_pos {
+        return make_result("", name_pos, false);
+    }
+    let raw_name: str = str_substring(input, name_pos, name_end);
+    let name: str = c_name(&raw_name);
+
+    let colon_pos = skip_space(input, name_end);
+    let c_type: str = "int64_t";
+    let next_pos = colon_pos;
+    let has_type = str_char_code(input, colon_pos) == 58;
+
+    if has_type {
+        let parsed_type = parse_type(input, colon_pos + 1);
+        if !parsed_type.valid {
+            return parsed_type;
+        }
+        c_type = parsed_type.code;
+        next_pos = parsed_type.next_pos;
+    }
+
+    let eq_pos = skip_space(input, next_pos);
+    if str_char_code(input, eq_pos) != 61 {
+        return make_result("", eq_pos, false);
+    }
+    let value = parse_expression(input, eq_pos + 1);
+    if !value.valid {
+        return value;
+    }
+
+    // If no explicit type, infer from the expression
+    if !has_type {
+        let callee = expr_callee_name(&value.code);
+        // ParseResult-returning functions
+        if str_eq(&callee, "make_result") || str_eq(&callee, "compile_program") {
+            c_type = "ParseResult";
+        } else {
+            // Check for parse_ prefix (all parse functions return ParseResult)
+            if str_len(&callee) >= 6 {
+                let prefix = str_substring(&callee, 0, 6);
+                if str_eq(&prefix, "parse_") {
+                    c_type = "ParseResult";
+                }
+            }
+        }
+        // str-returning functions
+        if str_eq(&callee, "c_name") || str_eq(&callee, "link_type_to_c") ||
+           str_eq(&callee, "binary_code") || str_eq(&callee, "expr_callee_name") ||
+           str_eq(&callee, "lookup_ret_type") ||
+           str_eq(&callee, "link_str_concat") || str_eq(&callee, "str_concat") ||
+           str_eq(&callee, "link_str_substring") || str_eq(&callee, "str_substring") ||
+           str_eq(&callee, "link_file_read") || str_eq(&callee, "file_read") ||
+           str_eq(&callee, "link_arg") || str_eq(&callee, "arg") {
+            c_type = "const char*";
+        }
+        // bool-returning functions
+        if str_eq(&callee, "is_ident_start") || str_eq(&callee, "is_ident_continue") ||
+           str_eq(&callee, "is_space") || str_eq(&callee, "is_digit") ||
+           str_eq(&callee, "keyword_at") ||
+           str_eq(&callee, "link_str_eq") || str_eq(&callee, "str_eq") {
+            c_type = "bool";
+        }
+    }
+
+    // Always-run heuristics (regardless of has_type)
+    // Struct/enum/list constructor: ((TypeName){ ... })
+    if str_len(&value.code) >= 4 && str_char_code(&value.code, 0) == 40 && str_char_code(&value.code, 1) == 40 {
+        // Extract type name between (( and ){
+        let type_start = 2;
+        let type_end = type_start;
+        let vlen = str_len(&value.code);
+        while type_end < vlen && str_char_code(&value.code, type_end) != 41 {
+            type_end = type_end + 1;
+        }
+        if type_end > type_start {
+            c_type = str_substring(&value.code, type_start, type_end);
+        }
+    }
+    // String literal?
+    if str_char_code(&value.code, 0) == 34 {
+        c_type = "const char*";
+    }
+    // Field access .code or .name → string, .valid → bool
+    let vlen = str_len(&value.code);
+    if vlen > 2 {
+        let last_dot = -1;
+        let scan = 0;
+        while scan < vlen {
+            if str_char_code(&value.code, scan) == 46 {
+                last_dot = scan;
+            }
+            scan = scan + 1;
+        }
+        if last_dot >= 0 {
+            let field = str_substring(&value.code, last_dot + 1, vlen);
+            if str_eq(&field, "code") || str_eq(&field, "name") || str_eq(&field, "raw_name") {
+                c_type = "const char*";
+            }
+            if str_eq(&field, "valid") {
+                c_type = "bool";
+            }
+        }
+    }
+
+    let end_pos = finish_statement(input, value.next_pos);
+    if end_pos < 0 {
+        return make_result("", value.next_pos, false);
+    }
+    let code = str_concat("    ", c_type);
+    code = str_concat(code, " ");
+    code = str_concat(code, &name);
+    code = str_concat(code, " = ");
+    code = str_concat(code, value.code);
+    code = str_concat(code, ";\n");
+    return make_result(code, end_pos, true);
+}
+
+// ── println statement ────────────────────────────────────────────────────────
+
+fn parse_println(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start + 7);
+    if str_char_code(input, pos) != 40 {
+        return make_result("", pos, false);
+    }
+
+    // Check for format string with {}
+    let fmt_start = skip_space(input, pos + 1);
+    let has_format = false;
+    let arg_count: i64 = 0;
+
+    if str_char_code(input, fmt_start) == 34 {
+        // scan format string to count {} pairs
+        let scan_pos = fmt_start + 1;
+        let length = str_len(input);
+        while scan_pos < length {
+            let c = str_char_code(input, scan_pos);
+            if c == 34 {
+                break;
+            }
+            if c == 92 {
+                scan_pos = scan_pos + 2;
+                continue;
+            }
+            if c == 123 && scan_pos + 1 < length && str_char_code(input, scan_pos + 1) == 125 {
+                has_format = true;
+                arg_count = arg_count + 1;
+                scan_pos = scan_pos + 2;
+            } else {
+                scan_pos = scan_pos + 1;
+            }
+        }
+    }
+
+    if has_format && arg_count > 0 {
+        // format string println: println("fmt {}", arg1, arg2, ...)
+        let fmt_value = parse_expression(input, pos + 1);
+        if !fmt_value.valid {
+            return fmt_value;
+        }
+
+        let c_args: str = "";
+        let next_pos = skip_space(input, fmt_value.next_pos);
+        let first = true;
+        while str_char_code(input, next_pos) == 44 {
+            next_pos = skip_space(input, next_pos + 1);
+            let arg = parse_expression(input, next_pos);
+            if !arg.valid {
+                return arg;
+            }
+            if !first {
+                c_args = str_concat(c_args, ", ");
+            }
+            c_args = str_concat(c_args, arg.code);
+            first = false;
+            next_pos = skip_space(input, arg.next_pos);
+        }
+
+        if str_char_code(input, next_pos) != 41 {
+            return make_result("", next_pos, false);
+        }
+        let end_pos = finish_statement(input, next_pos + 1);
+        if end_pos < 0 {
+            return make_result("", next_pos + 1, false);
+        }
+
+        let code = str_concat("    printf(", fmt_value.code);
+        if str_len(&c_args) > 0 {
+            code = str_concat(code, ", ");
+            code = str_concat(code, &c_args);
+        }
+        code = str_concat(code, ");\n");
+        return make_result(code, end_pos, true);
+    }
+
+    // simple println: one expression
+    let value = parse_expression(input, pos + 1);
+    if !value.valid {
+        return value;
+    }
+    let close_pos = skip_space(input, value.next_pos);
+    if str_char_code(input, close_pos) != 41 {
+        return make_result("", close_pos, false);
+    }
+    let end_pos = finish_statement(input, close_pos + 1);
+    if end_pos < 0 {
+        return make_result("", close_pos + 1, false);
+    }
+    // Simple println: detect type from expression code
+    let code: str = "";
+    if str_char_code(&value.code, 0) == 34 {
+        // String literal: printf %s
+        code = str_concat("    printf(\"%s\\n\", ", value.code);
+        code = str_concat(code, ");\n");
+    } else if str_eq(&value.code, "true") || str_eq(&value.code, "false") {
+        // Bool literal
+        code = str_concat("    printf(\"%s\\n\", (", value.code);
+        code = str_concat(code, ") ? \"true\" : \"false\");\n");
+    } else {
+        // Default: integer
+        code = str_concat("    link_print_i64(", value.code);
+        code = str_concat(code, ");\n");
+    }
+    return make_result(code, end_pos, true);
+}
+
+// ── while statement ──────────────────────────────────────────────────────────
+
+fn parse_while(input: &str, start: i64) -> ParseResult {
+    let condition = parse_expression(input, start + 5);
+    if !condition.valid {
+        return condition;
+    }
+    let body = parse_block(input, condition.next_pos);
+    if !body.valid {
+        return body;
+    }
+    let code = str_concat("    while (", condition.code);
+    code = str_concat(code, ") {\n");
+    code = str_concat(code, body.code);
+    code = str_concat(code, "    }\n");
+    return make_result(code, body.next_pos, true);
+}
+
+// ── for statement: for var in start..end { body } ────────────────────────────
+
+fn parse_for(input: &str, start: i64) -> ParseResult {
+    // "for" var "in" start ".." end block
+    let var_pos = skip_space(input, start + 3);
+    let var_end = scan_ident(input, var_pos);
+    if var_end == var_pos {
+        return make_result("", var_pos, false);
+    }
+    let var_name = str_substring(input, var_pos, var_end);
+    let c_var: str = c_name(&var_name);
+
+    let in_pos = skip_space(input, var_end);
+    if !keyword_at(input, in_pos, &"in") {
+        return make_result("", in_pos, false);
+    }
+
+    let start_expr = parse_expression(input, in_pos + 2);
+    if !start_expr.valid {
+        return start_expr;
+    }
+
+    let dotdot_pos = skip_space(input, start_expr.next_pos);
+    if str_char_code(input, dotdot_pos) != 46 || str_char_code(input, dotdot_pos + 1) != 46 {
+        return make_result("", dotdot_pos, false);
+    }
+
+    let end_expr = parse_expression(input, dotdot_pos + 2);
+    if !end_expr.valid {
+        return end_expr;
+    }
+
+    let body = parse_block(input, end_expr.next_pos);
+    if !body.valid {
+        return body;
+    }
+
+    let code = str_concat("    for (int64_t ", &c_var);
+    code = str_concat(code, " = ");
+    code = str_concat(code, start_expr.code);
+    code = str_concat(code, "; ");
+    code = str_concat(code, &c_var);
+    code = str_concat(code, " < ");
+    code = str_concat(code, end_expr.code);
+    code = str_concat(code, "; ");
+    code = str_concat(code, &c_var);
+    code = str_concat(code, "++) {\n");
+    code = str_concat(code, body.code);
+    code = str_concat(code, "    }\n");
+    return make_result(code, body.next_pos, true);
+}
+
+// ── if / else statement ──────────────────────────────────────────────────────
+
+fn parse_if(input: &str, start: i64) -> ParseResult {
+    let condition = parse_expression(input, start + 2);
+    if !condition.valid {
+        return condition;
+    }
+    let then_body = parse_block(input, condition.next_pos);
+    if !then_body.valid {
+        return then_body;
+    }
+    let code = str_concat("    if (", condition.code);
+    code = str_concat(code, ") {\n");
+    code = str_concat(code, then_body.code);
+    code = str_concat(code, "    }");
+    let next_pos = skip_space(input, then_body.next_pos);
+    if keyword_at(input, next_pos, &"else") {
+        let else_body = parse_block(input, next_pos + 4);
+        if !else_body.valid {
+            return else_body;
+        }
+        code = str_concat(code, " else {\n");
+        code = str_concat(code, else_body.code);
+        code = str_concat(code, "    }\n");
+        next_pos = else_body.next_pos;
+    } else {
+        code = str_concat(code, "\n");
+    }
+    return make_result(code, next_pos, true);
+}
+
+// ── match statement ──────────────────────────────────────────────────────────
+
+fn parse_match(input: &str, start: i64) -> ParseResult {
+    // "match" expr { arm, arm, ... }
+    // arm: Pattern => { body }
+    let scrutinee = parse_expression(input, start + 5);
+    if !scrutinee.valid {
+        return scrutinee;
+    }
+    let brace_pos = skip_space(input, scrutinee.next_pos);
+    if str_char_code(input, brace_pos) != 123 {
+        return make_result("", brace_pos, false);
+    }
+
+    let code: str = "";
+    let pos = skip_space(input, brace_pos + 1);
+    let first = true;
+    while str_char_code(input, pos) != 125 {
+        let arm_code: str = "";
+        let cond: str = "1";  // default: wildcard matches everything
+
+        // Parse pattern
+        if keyword_at(input, pos, &"_") {
+            // Wildcard
+            pos = skip_space(input, pos + 1);
+        } else {
+            // Enum variant: Name::Variant or Name::Variant(binding)
+            let pat_end = scan_ident(input, pos);
+            if pat_end > pos {
+                let pat_name = str_substring(input, pos, pat_end);
+                let after_pat = skip_space(input, pat_end);
+                if str_char_code(input, after_pat) == 58 && str_char_code(input, after_pat + 1) == 58 {
+                    // Name::Variant pattern
+                    let var_pos = skip_space(input, after_pat + 2);
+                    let var_end = scan_ident(input, var_pos);
+                    let variant = str_substring(input, var_pos, var_end);
+                    pos = skip_space(input, var_end);
+
+                    cond = str_concat("(", &scrutinee.code);
+                    cond = str_concat(cond, ".discriminant == ");
+                    cond = str_concat(cond, &pat_name);
+                    cond = str_concat(cond, "_v_");
+                    cond = str_concat(cond, &variant);
+                    cond = str_concat(cond, ")");
+
+                    // Check for payload binding: Variant(binding)
+                    if str_char_code(input, pos) == 40 {
+                        pos = skip_space(input, pos + 1);
+                        let bind_end = scan_ident(input, pos);
+                        if bind_end > pos {
+                            let bind_name = str_substring(input, pos, bind_end);
+                            pos = skip_space(input, bind_end);
+                            if str_char_code(input, pos) != 41 {
+                                return make_result("", pos, false);
+                            }
+                            pos = skip_space(input, pos + 1);
+                            // Generate binding: int64_t bind_name = scrutinee.data.Variant.field0;
+                            arm_code = str_concat(arm_code, "        int64_t ");
+                            arm_code = str_concat(arm_code, &bind_name);
+                            arm_code = str_concat(arm_code, " = ");
+                            arm_code = str_concat(arm_code, &scrutinee.code);
+                            arm_code = str_concat(arm_code, ".data.");
+                            arm_code = str_concat(arm_code, &variant);
+                            arm_code = str_concat(arm_code, ".field0;\n");
+                        }
+                    }
+                } else {
+                    return make_result("", after_pat, false);
+                }
+            } else {
+                return make_result("", pos, false);
+            }
+        }
+
+        // Parse => { body }
+        let arrow_pos = skip_space(input, pos);
+        if str_char_code(input, arrow_pos) != 61 || str_char_code(input, arrow_pos + 1) != 62 {
+            return make_result("", arrow_pos, false);
+        }
+        let body = parse_block(input, arrow_pos + 2);
+        if !body.valid {
+            return body;
+        }
+        pos = body.next_pos;
+
+        // Generate if/else chain
+        let is_wildcard = str_eq(&cond, "1");
+        if first {
+            if is_wildcard {
+                code = str_concat(code, "    {\n");
+            } else {
+                code = str_concat(code, "    if (");
+                code = str_concat(code, &cond);
+                code = str_concat(code, ") {\n");
+            }
+            code = str_concat(code, &arm_code);
+            code = str_concat(code, body.code);
+            code = str_concat(code, "    }");
+            first = false;
+        } else {
+            if is_wildcard {
+                code = str_concat(code, " else {\n");
+            } else {
+                code = str_concat(code, " else if (");
+                code = str_concat(code, &cond);
+                code = str_concat(code, ") {\n");
+            }
+            if str_len(&arm_code) > 0 {
+                code = str_concat(code, &arm_code);
+            }
+            code = str_concat(code, body.code);
+            code = str_concat(code, "    }");
+        }
+
+        pos = skip_space(input, pos);
+        // Match arms separated by whitespace (not commas); just check for end brace
+    }
+    code = str_concat(code, "\n");
+    return make_result(code, pos + 1, true);
+}
+
+// ── assignment statement ─────────────────────────────────────────────────────
+
+fn parse_assignment(input: &str, start: i64) -> ParseResult {
+    let name_end = scan_ident(input, start);
+    if name_end == start {
+        return make_result("", start, false);
+    }
+    let eq_pos = skip_space(input, name_end);
+    if str_char_code(input, eq_pos) != 61 || str_char_code(input, eq_pos + 1) == 61 {
+        return make_result("", eq_pos, false);
+    }
+    let value = parse_expression(input, eq_pos + 1);
+    if !value.valid {
+        return value;
+    }
+    let end_pos = finish_statement(input, value.next_pos);
+    if end_pos < 0 {
+        return make_result("", value.next_pos, false);
+    }
+    let raw_name: str = str_substring(input, start, name_end);
+    let name: str = c_name(&raw_name);
+    let code = str_concat("    ", &name);
+    code = str_concat(code, " = ");
+    code = str_concat(code, value.code);
+    code = str_concat(code, ";\n");
+    return make_result(code, end_pos, true);
+}
+
+// ── return statement ─────────────────────────────────────────────────────────
+
+fn parse_return(input: &str, start: i64) -> ParseResult {
+    let expr_pos = skip_space(input, start + 6);
+    // return without expression
+    if str_char_code(input, expr_pos) == 59 {
+        return make_result("    return;\n", expr_pos + 1, true);
+    }
+    let value = parse_expression(input, expr_pos);
+    if !value.valid {
+        return value;
+    }
+    let end_pos = finish_statement(input, value.next_pos);
+    if end_pos < 0 {
+        return make_result("", value.next_pos, false);
+    }
+    let code: str = str_concat("    return ", value.code);
+    code = str_concat(code, ";\n");
+    return make_result(code, end_pos, true);
+}
+
+// ── struct declaration ───────────────────────────────────────────────────────
+
+fn parse_struct_decl(input: &str, start: i64) -> ParseResult {
+    // "struct" Name { field: Type, ... }
+    let name_pos = skip_space(input, start + 6);
+    let name_end = scan_ident(input, name_pos);
+    if name_end == name_pos {
+        return make_result("", name_pos, false);
+    }
+    let struct_name = str_substring(input, name_pos, name_end);
+
+    let brace_pos = skip_space(input, name_end);
+    if str_char_code(input, brace_pos) != 123 {
+        return make_result("", brace_pos, false);
+    }
+
+    let fields_code: str = "";
+    let pos = skip_space(input, brace_pos + 1);
+    while str_char_code(input, pos) != 125 {
+        let field_end = scan_ident(input, pos);
+        if field_end == pos {
+            return make_result("", pos, false);
+        }
+        let field_name = str_substring(input, pos, field_end);
+
+        let colon_pos = skip_space(input, field_end);
+        if str_char_code(input, colon_pos) != 58 {
+            return make_result("", colon_pos, false);
+        }
+
+        let parsed_type = parse_type(input, colon_pos + 1);
+        if !parsed_type.valid {
+            return parsed_type;
+        }
+
+        fields_code = str_concat(fields_code, "    ");
+        fields_code = str_concat(fields_code, parsed_type.code);
+        fields_code = str_concat(fields_code, " ");
+        fields_code = str_concat(fields_code, &field_name);
+        fields_code = str_concat(fields_code, ";\n");
+
+        pos = skip_space(input, parsed_type.next_pos);
+        if str_char_code(input, pos) == 44 {
+            pos = skip_space(input, pos + 1);
+        } else {
+            if str_char_code(input, pos) != 125 {
+                return make_result("", pos, false);
+            }
+        }
+    }
+
+    let code = str_concat("typedef struct {\n", &fields_code);
+    code = str_concat(code, "} ");
+    code = str_concat(code, &struct_name);
+    code = str_concat(code, ";\n");
+    return make_result(code, pos + 1, true);
+}
+
+// ── enum declaration ─────────────────────────────────────────────────────────
+
+fn parse_enum_decl(input: &str, start: i64) -> ParseResult {
+    // "enum" Name { Variant, Variant(Type, ...), ... }
+    let name_pos = skip_space(input, start + 4);
+    let name_end = scan_ident(input, name_pos);
+    if name_end == name_pos {
+        return make_result("", name_pos, false);
+    }
+    let enum_name = str_substring(input, name_pos, name_end);
+
+    let brace_pos = skip_space(input, name_end);
+    if str_char_code(input, brace_pos) != 123 {
+        return make_result("", brace_pos, false);
+    }
+
+    // Collect variant names and their payload types
+    let has_payload = false;
+    let union_fields: str = "";
+    let variant_names: str = "";
+    let variant_count: i64 = 0;
+    let pos = skip_space(input, brace_pos + 1);
+    while str_char_code(input, pos) != 125 {
+        let var_end = scan_ident(input, pos);
+        if var_end == pos {
+            return make_result("", pos, false);
+        }
+        let var_name = str_substring(input, pos, var_end);
+        pos = skip_space(input, var_end);
+
+        // Check for payload: Variant(Type) or Variant(Type1, Type2)
+        let payload_types: str = "";
+        if str_char_code(input, pos) == 40 {
+            has_payload = true;
+            pos = skip_space(input, pos + 1);
+            let first_pt = true;
+            while str_char_code(input, pos) != 41 {
+                let pt_end = scan_ident(input, pos);
+                if pt_end == pos {
+                    return make_result("", pos, false);
+                }
+                let pt_name = str_substring(input, pos, pt_end);
+                let c_pt = link_type_to_c(&pt_name);
+                if !first_pt {
+                    payload_types = str_concat(payload_types, "; ");
+                }
+                payload_types = str_concat(payload_types, &c_pt);
+                payload_types = str_concat(payload_types, " field");
+                if first_pt {
+                    payload_types = str_concat(payload_types, "0");
+                } else {
+                    if variant_count == 0 {
+                        payload_types = str_concat(payload_types, "1");
+                    }
+                }
+                first_pt = false;
+                pos = skip_space(input, pt_end);
+                if str_char_code(input, pos) == 44 {
+                    pos = skip_space(input, pos + 1);
+                } else {
+                    if str_char_code(input, pos) != 41 {
+                        return make_result("", pos, false);
+                    }
+                }
+            }
+            pos = skip_space(input, pos + 1);
+        }
+
+        // Generate union field for this variant
+        union_fields = str_concat(union_fields, "        struct { ");
+        union_fields = str_concat(union_fields, &payload_types);
+        union_fields = str_concat(union_fields, "; } ");
+        union_fields = str_concat(union_fields, &var_name);
+        union_fields = str_concat(union_fields, ";\n");
+
+        // Track variant name for discriminant enum
+        if variant_count > 0 {
+            variant_names = str_concat(variant_names, ", ");
+        }
+        variant_names = str_concat(variant_names, &enum_name);
+        variant_names = str_concat(variant_names, "_v_");
+        variant_names = str_concat(variant_names, &var_name);
+        variant_names = str_concat(variant_names, " = ");
+        if variant_count == 0 { variant_names = str_concat(variant_names, "0"); }
+        if variant_count == 1 { variant_names = str_concat(variant_names, "1"); }
+        if variant_count == 2 { variant_names = str_concat(variant_names, "2"); }
+        if variant_count == 3 { variant_names = str_concat(variant_names, "3"); }
+        if variant_count == 4 { variant_names = str_concat(variant_names, "4"); }
+        if variant_count == 5 { variant_names = str_concat(variant_names, "5"); }
+
+        variant_count = variant_count + 1;
+
+        pos = skip_space(input, pos);
+        if str_char_code(input, pos) == 44 {
+            pos = skip_space(input, pos + 1);
+        } else {
+            if str_char_code(input, pos) != 125 {
+                return make_result("", pos, false);
+            }
+        }
+    }
+
+    // Build C code
+    let code: str = "typedef struct {\n";
+    code = str_concat(code, &"    int32_t discriminant;\n");
+    if has_payload {
+        code = str_concat(code, &"    union {\n");
+        code = str_concat(code, &union_fields);
+        code = str_concat(code, &"    } data;\n");
+    }
+    code = str_concat(code, "} ");
+    code = str_concat(code, &enum_name);
+    code = str_concat(code, ";\n");
+    code = str_concat(code, "enum ");
+    code = str_concat(code, &enum_name);
+    code = str_concat(code, "_variants { ");
+    code = str_concat(code, &variant_names);
+    code = str_concat(code, " };\n");
+    return make_result(code, pos + 1, true);
+}
+
+// ── function declaration ─────────────────────────────────────────────────────
+
+fn parse_function(input: &str, start: i64) -> ParseResult {
+    let name_pos = skip_space(input, start + 2);
+    let name_end = scan_ident(input, name_pos);
+    if name_end == name_pos {
+        return make_result("", name_pos, false);
+    }
+    let raw_name: str = str_substring(input, name_pos, name_end);
+    let name: str = c_name(&raw_name);
+    let pos = skip_space(input, name_end);
+    if str_char_code(input, pos) != 40 {
+        return make_result("", pos, false);
+    }
+    pos = skip_space(input, pos + 1);
+
+    // Parse parameters: name: Type
+    let params_code: str = "";
+    let first_param = true;
+    while str_char_code(input, pos) != 41 {
+        let param_end = scan_ident(input, pos);
+        if param_end == pos {
+            return make_result("", pos, false);
+        }
+        let raw_param_name: str = str_substring(input, pos, param_end);
+        let param_name: str = c_name(&raw_param_name);
+        pos = skip_space(input, param_end);
+        if str_char_code(input, pos) != 58 {
+            return make_result("", pos, false);
+        }
+        let parsed_type = parse_type(input, pos + 1);
+        if !parsed_type.valid {
+            return parsed_type;
+        }
+        if !first_param {
+            params_code = str_concat(params_code, ", ");
+        }
+        params_code = str_concat(params_code, parsed_type.code);
+        params_code = str_concat(params_code, " ");
+        params_code = str_concat(params_code, &param_name);
+        first_param = false;
+        pos = skip_space(input, parsed_type.next_pos);
+        if str_char_code(input, pos) == 44 {
+            pos = skip_space(input, pos + 1);
+        } else {
+            if str_char_code(input, pos) != 41 {
+                return make_result("", pos, false);
+            }
+        }
+    }
+    pos = skip_space(input, pos + 1);
+
+    // return type: -> Type
+    let ret_c_type: str = "void";
+    if str_char_code(input, pos) == 45 && str_char_code(input, pos + 1) == 62 {
+        let ret_pos = skip_space(input, pos + 2);
+        let parsed_ret = parse_type(input, ret_pos);
+        if !parsed_ret.valid {
+            return parsed_ret;
+        }
+        ret_c_type = parsed_ret.code;
+        pos = parsed_ret.next_pos;
+    }
+
+    let body = parse_block(input, pos);
+    if !body.valid {
+        return body;
+    }
+
+    // Generate forward declaration (for two-pass) + definition
+    let forward: str = str_concat(ret_c_type, " ");
+    forward = str_concat(forward, &name);
+    forward = str_concat(forward, "(");
+    forward = str_concat(forward, &params_code);
+    forward = str_concat(forward, ");\n");
+
+    let def: str = str_concat(ret_c_type, " ");
+    def = str_concat(def, &name);
+    def = str_concat(def, "(");
+    def = str_concat(def, &params_code);
+    def = str_concat(def, ") {\n");
+    def = str_concat(def, body.code);
+    def = str_concat(def, "}\n\n");
+
+    // Return both forward decl and definition — caller splits them
+    let combined = str_concat(&forward, &def);
+    return make_result(combined, body.next_pos, true);
+}
+
+// ── statement dispatch ───────────────────────────────────────────────────────
+
+fn parse_statement(input: &str, start: i64) -> ParseResult {
+    let pos = skip_space(input, start);
+    if keyword_at(input, pos, &"struct") {
+        return parse_struct_decl(input, pos);
+    }
+    if keyword_at(input, pos, &"enum") {
+        return parse_enum_decl(input, pos);
+    }
+    if keyword_at(input, pos, &"fn") {
+        // Already handled in pass 1; skip in pass 2
+        // Find the closing } of the function body
+        let skip_pos = pos + 2;
+        let depth = 0;
+        let scanning = true;
+        while scanning && skip_pos < str_len(input) {
+            let ch = str_char_code(input, skip_pos);
+            if ch == 123 { depth = depth + 1; }
+            if ch == 125 {
+                if depth == 0 { scanning = false; }
+                else { depth = depth - 1; }
+            }
+            skip_pos = skip_pos + 1;
+        }
+        return make_result("", skip_pos, true);
+    }
+    if keyword_at(input, pos, &"let") {
+        return parse_let(input, pos);
+    }
+    if keyword_at(input, pos, &"println") {
+        return parse_println(input, pos);
+    }
+    if keyword_at(input, pos, &"while") {
+        return parse_while(input, pos);
+    }
+    if keyword_at(input, pos, &"for") {
+        return parse_for(input, pos);
+    }
+    if keyword_at(input, pos, &"if") {
+        return parse_if(input, pos);
+    }
+    if keyword_at(input, pos, &"match") {
+        return parse_match(input, pos);
+    }
+    if keyword_at(input, pos, &"return") {
+        return parse_return(input, pos);
+    }
+    if keyword_at(input, pos, &"break") {
+        let end_pos = finish_statement(input, pos + 5);
+        if end_pos < 0 {
+            return make_result("", pos, false);
+        }
+        return make_result("    break;\n", end_pos, true);
+    }
+    if keyword_at(input, pos, &"continue") {
+        let end_pos = finish_statement(input, pos + 8);
+        if end_pos < 0 {
+            return make_result("", pos, false);
+        }
+        return make_result("    continue;\n", end_pos, true);
+    }
+    // Expression statement: function call at top level
+    let ident_end = scan_ident(input, pos);
+    if ident_end > pos {
+        let after = skip_space(input, ident_end);
+        if str_char_code(input, after) == 40 {
+            let expr = parse_expression(input, pos);
+            if !expr.valid {
+                return expr;
+            }
+            let end_pos = finish_statement(input, expr.next_pos);
+            if end_pos < 0 {
+                return make_result("", expr.next_pos, false);
+            }
+            let code = str_concat("    ", expr.code);
+            code = str_concat(code, ";\n");
+            return make_result(code, end_pos, true);
+        }
+    }
+    return parse_assignment(input, pos);
+}
+
+// ── two-pass compilation entry ───────────────────────────────────────────────
+
+fn compile_program(input: &str) -> ParseResult {
+    let pos = 0;
+    let forward_decls: str = "";
+    let function_defs: str = "";
+    let struct_defs: str = "";
+
+    // === PASS 1: collect struct definitions and function forward declarations ===
+    let scan_pos = skip_space(input, pos);
+    let has_user_main = false;
+    let done = false;
+    while scan_pos < str_len(input) && !done {
+        if keyword_at(input, scan_pos, &"struct") {
+            let parsed = parse_struct_decl(input, scan_pos);
+            if !parsed.valid {
+                return parsed;
+            }
+            struct_defs = str_concat(struct_defs, parsed.code);
+            scan_pos = skip_space(input, parsed.next_pos);
+        } else if keyword_at(input, scan_pos, &"enum") {
+            let parsed = parse_enum_decl(input, scan_pos);
+            if !parsed.valid { return parsed; }
+            struct_defs = str_concat(struct_defs, parsed.code);
+            scan_pos = skip_space(input, parsed.next_pos);
+        } else if keyword_at(input, scan_pos, &"fn") {
+                // Check if this is fn main()
+                let fn_name_pos = skip_space(input, scan_pos + 2);
+                let fn_name_end = scan_ident(input, fn_name_pos);
+                let fn_name = str_substring(input, fn_name_pos, fn_name_end);
+                if str_eq(&fn_name, "main") {
+                    has_user_main = true;
+                }
+                let parsed = parse_function(input, scan_pos);
+                if !parsed.valid {
+                    return parsed;
+                }
+                // Split forward decl (before first newline) from definition
+                let split = 0;
+                let len = str_len(parsed.code);
+                while split < len && str_char_code(parsed.code, split) != 10 {
+                    split = split + 1;
+                }
+                // find second newline (skip blank line between forward decl and def)
+                let def_start = split + 1;
+                if def_start < len && str_char_code(parsed.code, def_start) == 10 {
+                    def_start = def_start + 1;
+                }
+                let fwd = str_substring(parsed.code, 0, split + 1);
+                let def = str_substring(parsed.code, def_start, len);
+                forward_decls = str_concat(forward_decls, &fwd);
+                function_defs = str_concat(function_defs, &def);
+                scan_pos = skip_space(input, parsed.next_pos);
+        } else {
+                done = true;
+            }
+    }
+
+    // === PASS 2: generate top-level statements in main() ===
+    let code: str = "#include <stdint.h>\n";
+    code = str_concat(code, "#include <stdbool.h>\n");
+    code = str_concat(code, "#include <stdio.h>\n");
+    code = str_concat(code, "#include <stdlib.h>\n");
+    code = str_concat(code, "#include <string.h>\n");
+    code = str_concat(code, "\n");
+
+    code = str_concat(code, &"static void link_print_i64(int64_t value) {\n");
+    code = str_concat(code, &"    printf(\"%lld\\n\", (long long)value);\n");
+    code = str_concat(code, &"}\n\n");
+
+    // Bootstrap runtime: arena allocator (256KB bump, fallback to malloc)
+    code = str_concat(code, &"typedef struct { int64_t count; int64_t items[256]; } LinkList;\n\n");
+    code = str_concat(code, &"#define LINK_ARENA_SZ (256 * 1024)\n");
+    code = str_concat(code, &"static char link_arena[LINK_ARENA_SZ];\n");
+    code = str_concat(code, &"static size_t link_arena_pos = 0;\n\n");
+    code = str_concat(code, &"static void* link_arena_alloc(size_t sz) {\n");
+    code = str_concat(code, &"    if (link_arena_pos + sz > LINK_ARENA_SZ) return malloc(sz);\n");
+    code = str_concat(code, &"    void* p = link_arena + link_arena_pos;\n");
+    code = str_concat(code, &"    link_arena_pos += sz;\n");
+    code = str_concat(code, &"    return p;\n");
+    code = str_concat(code, &"}\n\n");
+
+    // Bootstrap runtime: string and file helpers
+    code = str_concat(code, &"static int64_t link_str_len(const char* value) {\n");
+    code = str_concat(code, &"    return value ? (int64_t)strlen(value) : 0;\n");
+    code = str_concat(code, &"}\n\n");
+    code = str_concat(code, &"static bool link_str_eq(const char* left, const char* right) {\n");
+    code = str_concat(code, &"    return strcmp(left ? left : \"\", right ? right : \"\") == 0;\n");
+    code = str_concat(code, &"}\n\n");
+    code = str_concat(code, &"static char* link_str_concat(const char* left, const char* right) {\n");
+    code = str_concat(code, &"    size_t ll = strlen(left ? left : \"\");\n");
+    code = str_concat(code, &"    size_t rl = strlen(right ? right : \"\");\n");
+    code = str_concat(code, &"    char* result = (char*)link_arena_alloc(ll + rl + 1);\n");
+    code = str_concat(code, &"    if (!result) { fputs(\"out of memory\\n\", stderr); exit(1); }\n");
+    code = str_concat(code, &"    memcpy(result, left ? left : \"\", ll);\n");
+    code = str_concat(code, &"    memcpy(result + ll, right ? right : \"\", rl + 1);\n");
+    code = str_concat(code, &"    return result;\n");
+    code = str_concat(code, &"}\n\n");
+    code = str_concat(code, &"static char* link_str_substring(const char* value, int64_t start, int64_t end) {\n");
+    code = str_concat(code, &"    int64_t length = link_str_len(value);\n");
+    code = str_concat(code, &"    if (start < 0) start = 0; if (end > length) end = length; if (end < start) end = start;\n");
+    code = str_concat(code, &"    size_t count = (size_t)(end - start);\n");
+    code = str_concat(code, &"    char* result = (char*)link_arena_alloc(count + 1);\n");
+    code = str_concat(code, &"    if (!result) { fputs(\"out of memory\\n\", stderr); exit(1); }\n");
+    code = str_concat(code, &"    memcpy(result, (value ? value : \"\") + start, count);\n");
+    code = str_concat(code, &"    result[count] = '\\0';\n");
+    code = str_concat(code, &"    return result;\n");
+    code = str_concat(code, &"}\n\n");
+    code = str_concat(code, &"static int64_t link_str_char_code(const char* value, int64_t index) {\n");
+    code = str_concat(code, &"    if (!value || index < 0 || index >= (int64_t)strlen(value)) return -1;\n");
+    code = str_concat(code, &"    return (int64_t)(unsigned char)value[index];\n");
+    code = str_concat(code, &"}\n\n");
+
+    // args and file I/O
+    code = str_concat(code, &"static int link_argc = 0;\n");
+    code = str_concat(code, &"static char** link_argv = NULL;\n");
+    code = str_concat(code, &"static int64_t link_args_len(void) { return (int64_t)link_argc; }\n");
+    code = str_concat(code, &"static const char* link_arg(int64_t index) {\n");
+    code = str_concat(code, &"    return (index >= 0 && index < link_argc) ? link_argv[index] : \"\";\n");
+    code = str_concat(code, &"}\n\n");
+    code = str_concat(code, &"static char* link_file_read(const char* path) {\n");
+    code = str_concat(code, &"    FILE* f = fopen(path, \"rb\");\n");
+    code = str_concat(code, &"    if (!f) { fprintf(stderr, \"error: cannot open '%s'\\n\", path); exit(1); }\n");
+    code = str_concat(code, &"    fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);\n");
+    code = str_concat(code, &"    if (sz < 0) { fclose(f); fputs(\"error: cannot read file\\n\", stderr); exit(1); }\n");
+    code = str_concat(code, &"    char* buf = (char*)link_arena_alloc((size_t)sz + 1);\n");
+    code = str_concat(code, &"    if (!buf) { fclose(f); fputs(\"error: out of memory\\n\", stderr); exit(1); }\n");
+    code = str_concat(code, &"    size_t rd = fread(buf, 1, (size_t)sz, f); fclose(f); buf[rd] = '\\0'; return buf;\n");
+    code = str_concat(code, &"}\n\n");
+    code = str_concat(code, &"static int64_t link_file_write(const char* path, const char* content) {\n");
+    code = str_concat(code, &"    FILE* f = fopen(path, \"wb\"); if (!f) return 0;\n");
+    code = str_concat(code, &"    size_t len = strlen(content ? content : \"\");\n");
+    code = str_concat(code, &"    size_t wr = fwrite(content ? content : \"\", 1, len, f);\n");
+    code = str_concat(code, &"    return (fclose(f) == 0 && wr == len);\n");
+    code = str_concat(code, &"}\n\n");
+
+    // struct definitions
+    code = str_concat(code, &struct_defs);
+    if str_len(&struct_defs) > 0 {
+        code = str_concat(code, "\n");
+    }
+
+    // forward declarations
+    code = str_concat(code, &forward_decls);
+    code = str_concat(code, "\n");
+
+    // function definitions
+    code = str_concat(code, &function_defs);
+
+    // Generate auto main() only if there are top-level statements and no user main()
+    let stmt_pos = skip_space(input, scan_pos);
+    if stmt_pos < str_len(input) && !has_user_main {
+        code = str_concat(code, "int main(void) {\n");
+        while stmt_pos < str_len(input) {
+            let statement = parse_statement(input, stmt_pos);
+            if !statement.valid {
+                return statement;
+            }
+            code = str_concat(code, statement.code);
+            stmt_pos = skip_space(input, statement.next_pos);
+        }
+        code = str_concat(code, "    return 0;\n}\n");
+    }
+    if has_user_main {
+        // Generate C main() entry that calls user's link_main()
+        code = str_concat(code, &"int main(int argc, char** argv) {\n");
+        code = str_concat(code, &"    link_argc = argc; link_argv = argv;\n");
+        code = str_concat(code, &"    link_main();\n");
+        code = str_concat(code, &"    return 0;\n");
+        code = str_concat(code, &"}\n");
+        stmt_pos = str_len(input);
+    }
+    return make_result(code, stmt_pos, true);
+}
+
+// ── entry point ──────────────────────────────────────────────────────────────
+
+fn main() {
+    if args_len() < 3 {
+        println(1);
+    } else {
+        let input_path: str = arg(1);
+        let output_path: str = arg(2);
+        let content: str = file_read(input_path);
+        let result: ParseResult = compile_program(&content);
+        if result.valid {
+            let written: i64 = file_write(output_path, result.code);
+            println(written);
+        } else {
+            let line: i64 = byte_line(&content, result.next_pos);
+            let col: i64 = byte_col(&content, result.next_pos);
+            println(result.next_pos);
+            println(line);
+            println(col);
+        }
+    }
+}

@@ -1,0 +1,17 @@
+// Link prelude: commonly used functions, auto-imported where possible.
+// This module re-exports the most useful items from other std modules.
+
+use std::math;
+use std::string;
+use std::io;
+
+// Re-exports from math
+fn absolute(value: i64) -> i64 { return math::absolute(value); }
+fn minimum(a: i64, b: i64) -> i64 { return math::min(a, b); }
+fn maximum(a: i64, b: i64) -> i64 { return math::max(a, b); }
+fn fib(n: i64) -> i64 { return math::fib(n); }
+
+// Re-exports from string
+fn starts_with(s: str, prefix: str) -> bool { return string::starts_with(s, prefix); }
+fn ends_with(s: str, suffix: str) -> bool { return string::ends_with(s, suffix); }
+fn contains(s: str, needle: str) -> bool { return string::contains(s, needle); }

@@ -1,0 +1,72 @@
+// Link v1.0 — full-featured demo
+// Core: FFI with C + standard library + self-hosting compiler surface
+
+extern "C" {
+    fn abs(n: i32) -> i32;
+    fn sqrt(x: f64) -> f64;
+}
+
+use std::math;
+use std::string;
+
+struct Stats {
+    sum: i64,
+    count: i64,
+}
+
+fn compute_stats(a: i64, b: i64, c: i64) -> Stats {
+    let s: i64 = a + b + c;
+    return Stats { sum: s, count: 3 };
+}
+
+fn check_name(name: str) {
+    if string::starts_with(name, "Link") {
+        println(1);
+    } else {
+        println(0);
+    }
+}
+
+fn main() {
+    // 1. FFI: call C standard library
+    println(abs(-42));
+    println(sqrt(16.0));
+
+    // 2. Standard library: math
+    println(fib(10));
+    println(factorial(5));
+    println(ipow(2, 8));
+    println(absolute(-100));
+
+    // 3. Standard library: string
+    if string::contains("hello world", "lo w") { println(1); } else { println(0); }
+    if string::starts_with("Link v1", "Link")  { println(1); } else { println(0); }
+    if string::ends_with("test.link", ".link") { println(1); } else { println(0); }
+
+    // 4. Structs and typed let
+    let stats: Stats = compute_stats(10, 20, 30);
+    println(stats.sum);
+    println(stats.count);
+
+    // 5. Control flow
+    let i: i64 = 0;
+    while i < 3 {
+        i = i + 1;
+    }
+    println(i);
+
+    for j in 0..5 {
+        if j >= 4 {
+            println(j);
+        }
+    }
+
+    // 6. Enum matching
+    enum Status { Ok, Err }
+    let s: Status = Status::Ok;
+    match s {
+        Status::Ok => { println(1); }
+        Status::Err => { println(0); }
+        _ => { println(9); }
+    }
+}

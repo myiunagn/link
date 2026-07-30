@@ -1,0 +1,60 @@
+// Link standard library: math utilities.
+//
+// Usage:
+//   use std::math;
+//   let result = math::fib(10);
+
+fn absolute(value: i64) -> i64 {
+    if value < 0 { return -value; }
+    return value;
+}
+
+fn minimum(a: i64, b: i64) -> i64 {
+    if a < b { return a; }
+    return b;
+}
+
+fn maximum(a: i64, b: i64) -> i64 {
+    if a > b { return a; }
+    return b;
+}
+
+fn clamp(value: i64, lo: i64, hi: i64) -> i64 {
+    return min(max(value, lo), hi);
+}
+
+fn fib(n: i64) -> i64 {
+    if n <= 1 { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn factorial(n: i64) -> i64 {
+    if n <= 1 { return 1; }
+    return n * factorial(n - 1);
+}
+
+fn ipow(base: i64, exp: i64) -> i64 {
+    let result: i64 = 1;
+    let i: i64 = 0;
+    while i < exp {
+        result = result * base;
+        i = i + 1;
+    }
+    return result;
+}
+
+fn is_even(n: i64) -> bool {
+    return n % 2 == 0;
+}
+
+fn is_odd(n: i64) -> bool {
+    return !is_even(n);
+}
+
+fn sum(from: i64, to: i64) -> i64 {
+    let total: i64 = 0;
+    for i in from..to {
+        total = total + i;
+    }
+    return total;
+}

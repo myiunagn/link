@@ -117,6 +117,9 @@ impl SemaType {
             (SemaType::Unknown, _) | (_, SemaType::Unknown) => true,
             (SemaType::Unit, SemaType::Void) | (SemaType::Void, SemaType::Unit) => true,
             (SemaType::List(a), SemaType::List(b)) => a.is_compatible_with(b),
+            // C backend maps Ref(T, _) to the same C type as T
+            (SemaType::Ref(a, _), SemaType::Ref(b, _)) => a.is_compatible_with(b),
+            (SemaType::Ref(a, _), other) | (other, SemaType::Ref(a, _)) => a.is_compatible_with(other),
             (SemaType::Stream(a), SemaType::Stream(b)) => a.is_compatible_with(b),
             (SemaType::Tuple(a_elems), SemaType::Tuple(b_elems)) => {
                 if a_elems.len() != b_elems.len() {
@@ -233,6 +236,44 @@ impl TypeChecker {
         fn_signatures.insert("collect".to_string(), SemaType::Function {
             params: vec![SemaType::Unknown],
             ret: Box::new(SemaType::List(Box::new(SemaType::Unknown))),
+        });
+
+        // Bootstrap runtime builtins (HANDOFF §3)
+        fn_signatures.insert("args_len".to_string(), SemaType::Function {
+            params: vec![],
+            ret: Box::new(SemaType::I64),
+        });
+        fn_signatures.insert("arg".to_string(), SemaType::Function {
+            params: vec![SemaType::I64],
+            ret: Box::new(SemaType::Str),
+        });
+        fn_signatures.insert("str_concat".to_string(), SemaType::Function {
+            params: vec![SemaType::Str, SemaType::Str],
+            ret: Box::new(SemaType::Str),
+        });
+        fn_signatures.insert("str_len".to_string(), SemaType::Function {
+            params: vec![SemaType::Str],
+            ret: Box::new(SemaType::I64),
+        });
+        fn_signatures.insert("str_eq".to_string(), SemaType::Function {
+            params: vec![SemaType::Str, SemaType::Str],
+            ret: Box::new(SemaType::Bool),
+        });
+        fn_signatures.insert("str_substring".to_string(), SemaType::Function {
+            params: vec![SemaType::Str, SemaType::I64, SemaType::I64],
+            ret: Box::new(SemaType::Str),
+        });
+        fn_signatures.insert("str_char_code".to_string(), SemaType::Function {
+            params: vec![SemaType::Str, SemaType::I64],
+            ret: Box::new(SemaType::I64),
+        });
+        fn_signatures.insert("file_read".to_string(), SemaType::Function {
+            params: vec![SemaType::Str],
+            ret: Box::new(SemaType::Str),
+        });
+        fn_signatures.insert("file_write".to_string(), SemaType::Function {
+            params: vec![SemaType::Str, SemaType::Str],
+            ret: Box::new(SemaType::I64),
         });
 
         Self {
@@ -1735,7 +1776,11 @@ impl BorrowChecker {
             }
             Expr::Call { callee, args } => {
                 // 内置函数通常不移动参数（复制语义）
-                let builtins_no_move = ["print", "println", "len", "sleep", "abs", "min", "max", "sqrt", "pow"];
+                let builtins_no_move = [
+                    "print", "println", "len", "sleep", "abs", "min", "max", "sqrt", "pow",
+                    "args_len", "arg", "str_concat", "str_len", "str_eq", "str_substring",
+                    "str_char_code", "file_read", "file_write",
+                ];
                 let args_may_move = !builtins_no_move.contains(&callee.as_str());
                 for arg in args {
                     self.check_expr(arg, args_may_move);

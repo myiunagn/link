@@ -1,0 +1,93 @@
+// Bootstrap fixture — tests the extended Stage 1 compiler surface.
+// Verifies: strings, bool, str, struct, field access, struct init,
+//           &&, ||, !, typed let, two-pass functions, & borrow.
+
+// ── struct declarations ──────────────────────────────────────────────────────
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+struct Labeled {
+    name: str,
+    pos: Point,
+}
+
+// ── function with multiple return types ──────────────────────────────────────
+
+fn double(value: i64) -> i64 {
+    return value * 2;
+}
+
+fn add(left: i64, right: i64) -> i64 {
+    return left + right;
+}
+
+fn is_positive(value: i64) -> bool {
+    return value > 0;
+}
+
+fn greet(name: str) -> str {
+    return str_concat("hello ", name);
+}
+
+fn negate(flag: bool) -> bool {
+    return !flag;
+}
+
+fn both(a: bool, b: bool) -> bool {
+    return a && b;
+}
+
+fn either(a: bool, b: bool) -> bool {
+    return a || b;
+}
+
+fn make_point(px: i64, py: i64) -> Point {
+    return Point { x: px, y: py };
+}
+
+fn point_x(p: Point) -> i64 {
+    return p.x;
+}
+
+fn point_y(p: Point) -> i64 {
+    return p.y;
+}
+
+// ── typed let ────────────────────────────────────────────────────────────────
+
+let total: i64 = add(double(3), 1);
+let current: i64 = total;
+let is_done: bool = false;
+
+while current < 10 {
+    current = current + 1;
+}
+
+if current == 10 {
+    is_done = true;
+}
+
+// ── struct init and field access ─────────────────────────────────────────────
+
+let origin: Point = Point { x: 0, y: 0 };
+let moved: Point = make_point(10, 20);
+
+// ── logical operators ────────────────────────────────────────────────────────
+
+let t: bool = true;
+let f: bool = false;
+let and_result: bool = t && t;
+let or_result: bool = f || t;
+let not_result: bool = !f;
+
+// ── borrow / reference ───────────────────────────────────────────────────────
+
+let px_val: i64 = point_x(&moved);
+let py_val: i64 = point_y(&moved);
+
+// ── final output (only one println for verify.ps1 to check) ──────────────────
+
+println(current);

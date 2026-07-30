@@ -1,0 +1,63 @@
+// Link standard library: string utilities.
+//
+// Wrappers around the built-in string runtime functions
+// for a more idiomatic API.
+
+fn starts_with(s: str, prefix: str) -> bool {
+    if str_len(prefix) > str_len(s) {
+        return false;
+    }
+    return str_eq(str_substring(s, 0, str_len(prefix)), prefix);
+}
+
+fn ends_with(s: str, suffix: str) -> bool {
+    let slen: i64 = str_len(s);
+    let flen: i64 = str_len(suffix);
+    if flen > slen {
+        return false;
+    }
+    return str_eq(str_substring(s, slen - flen, slen), suffix);
+}
+
+fn contains(s: str, needle: str) -> bool {
+    let slen: i64 = str_len(s);
+    let nlen: i64 = str_len(needle);
+    if nlen == 0 { return true; }
+    if nlen > slen { return false; }
+    let i: i64 = 0;
+    let max: i64 = slen - nlen + 1;
+    while i < max {
+        if str_eq(str_substring(s, i, i + nlen), needle) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn repeat(s: str, n: i64) -> str {
+    let result: str = "";
+    let i: i64 = 0;
+    while i < n {
+        result = str_concat(result, s);
+        i = i + 1;
+    }
+    return result;
+}
+
+fn is_empty(s: str) -> bool {
+    return str_len(s) == 0;
+}
+
+fn is_blank(s: str) -> bool {
+    let len: i64 = str_len(s);
+    let i: i64 = 0;
+    while i < len {
+        let ch: i64 = str_char_code(s, i);
+        if ch != 32 && ch != 9 && ch != 10 && ch != 13 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}

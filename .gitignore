@@ -3,6 +3,7 @@ Cargo.lock
 .idea
 .vscode
 /dist
+/bootstrap/build/
 # Node.js dependencies for editor extensions
 node_modules/
 # Documentation (moved to linkdoc repository)
@@ -13,3 +14,5 @@ requirements-docs.txt
 # Release artifacts
 *.zip
 release_notes_*.md
+# Test artifacts
+test_artifacts/

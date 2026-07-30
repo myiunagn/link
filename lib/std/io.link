@@ -1,0 +1,17 @@
+// Link standard library: I/O utilities.
+
+fn read_file(path: str) -> str {
+    return file_read(path);
+}
+
+fn write_file(path: str, content: str) -> i64 {
+    return file_write(path, content);
+}
+
+fn read_lines(path: str) -> str {
+    return file_read(path);
+}
+
+fn print_int(value: i64) {
+    println(value);
+}

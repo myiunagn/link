@@ -4,11 +4,11 @@ A language for connecting everything — from IoT devices to game servers to mul
 
 [![Documentation](https://img.shields.io/badge/docs-myiunagn.github.io-blue)](https://myiunagn.github.io/linkdoc/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.2.0-orange)](https://github.com/myiunagn/link/releases/tag/v0.2.0)
+[![Version](https://img.shields.io/badge/version-v1.0.0-blue)](https://github.com/myiunagn/link/releases)
 
 **Link** 是一门为"互联"而生的语言:从 IoT 设备到游戏后端,再到多语言胶水层。
 
-v0.2.0 已支持基本类型、控制流、函数、`stream<T>` 数据流、struct/enum 复合类型、**全球 12 种编程语言 FFI 互联**、**多后端编译器**(C / LLVM / Python / WASM)、**借用检查器**、**LSP 语言服务器**和**游戏后端域类型**。
+v1.0.0 已支持基本类型、控制流、函数、`stream<T>` 数据流、struct/enum 复合类型、**全球 12 种编程语言 FFI 互联**、**多后端编译器**(C / LLVM / Python / WASM)、**借用检查器**、**LSP 语言服务器**、**自举编译器**和**标准库**。
 
 ## 文档
 
@@ -29,6 +29,20 @@ mkdocs serve
 cargo build
 cargo run -p linkc_cli -- run tests/fixtures/fib.link
 ```
+
+## Self-host bootstrap
+
+Link now has a Stage 1 seed compiler written in Link. Rust is used once as the
+Stage 0 bootstrap host; the resulting Stage 1 compiler emits portable C and the
+generated program does not link Rust.
+
+```powershell
+./bootstrap/verify.ps1
+```
+
+The current seed covers the integer/control-flow core. See
+[`bootstrap/README.md`](bootstrap/README.md) for the supported surface and the
+path to a full fixed-point self-host build.
 
 ## Features
 
@@ -169,4 +183,4 @@ cargo test
 
 ## License
 
-MIT
+MIT — Copyright (c) 2024 ctost link
